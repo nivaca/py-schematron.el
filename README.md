@@ -46,7 +46,13 @@ Emacs does not install them for you.
 
 ## Installation
 
-From Codeberg (or GitHub, with its URL), in your init file:
+Any of these installs the package from Codeberg (or GitHub, with its URL).
+Each clones the whole repository, and the package uses that clone's own
+`py-xmlvalidate.py`, so updating the package updates the script too.
+
+### With package-vc (built into Emacs)
+
+In your init file:
 
 ```elisp
 (package-vc-install
@@ -67,15 +73,49 @@ or, with `use-package`:
 
 (`:rev :newest` follows the latest commit, as `package-vc-install` does;
 with use-package's default, the last release, Emacs 31.1.90 fails to find
-the package's main file.) The whole repository is cloned, so the package
-uses its own copy of
-`py-xmlvalidate.py`; `M-x package-vc-upgrade` updates both. If you already
-have a clone, `(add-to-list 'load-path "/path/to/py-xmlvalidate/emacs")`
-and `(require 'py-xmlvalidate)` work as well.
+the package's main file.) `M-x package-vc-upgrade` updates the package.
+
+### With Straight
+
+With `use-package`:
+
+```elisp
+(use-package py-xmlvalidate
+  :straight (:host codeberg :repo "nivaca/py-xmlvalidate"
+             :files ("emacs/*.el"))
+  :hook (nxml-mode . py-xmlvalidate-mode)
+  :custom
+  (py-xmlvalidate-python "~/.venvs/schematron/bin/python"))
+```
+
+or without it:
+
+```elisp
+(straight-use-package
+ '(py-xmlvalidate :host codeberg :repo "nivaca/py-xmlvalidate"
+                  :files ("emacs/*.el")))
+(add-hook 'nxml-mode-hook #'py-xmlvalidate-mode)
+```
+
+`:files` is needed because the Lisp file is in `emacs/`, not at the top
+of the repository; it leaves the tests (`emacs/test/`) out of the build.
+Straight builds the package from links to its clone, and the package
+follows the link back to the clone to find `py-xmlvalidate.py` (this
+needs version 0.1.1 or later). `M-x straight-pull-package RET
+py-xmlvalidate` updates it. From GitHub, use `:host github`.
+
+### From a clone
+
+If you already have a clone of the repository:
+
+```elisp
+(add-to-list 'load-path "/path/to/py-xmlvalidate/emacs")
+(require 'py-xmlvalidate)
+```
 
 ## Setup
 
-Three lines, if you did not use the `use-package` form above:
+Three lines, if you did not use a `use-package` form above:
 
 ```elisp
 (add-hook 'nxml-mode-hook #'py-xmlvalidate-mode)
@@ -107,7 +147,10 @@ the script and jing are in place.
 
 ## Settings
 
-`M-x customize-group RET py-xmlvalidate`:
+`M-x customize-group RET py-xmlvalidate`. `trusted-content` still has to
+be set (see [Setup](#setup)), whichever way the package was installed.
+
+The settings:
 
 | Variable | Default | Meaning |
 |---|---|---|

@@ -4,7 +4,7 @@
 ;; Copyright (C) 2026 Nicolas Vaughan <nicolasvaughan@proton.me>
 
 ;; Author: Nicolas Vaughan <nicolasvaughan@proton.me>
-;; Version: 0.1.0
+;; Version: 0.1.1
 ;; Package-Requires: ((emacs "31.1"))
 ;; Keywords: languages, xml, tools
 ;; URL: https://codeberg.org/nivaca/py-xmlvalidate
@@ -87,7 +87,9 @@ later is needed."
 (defcustom py-xmlvalidate-script nil
   "Path to py-xmlvalidate.py.
 When nil, the copy in the repository this package was installed
-from is used (the folder above this file)."
+from is used: it is looked for next to this file and in the
+folder above, also after following symbolic links, which is how
+it is found when Straight builds the package from links."
   :type '(choice (const :tag "The repository's copy" nil) file))
 
 (defcustom py-xmlvalidate-schema nil
@@ -298,10 +300,27 @@ it is a file name, and may start with \"~\"."
         (and (file-executable-p f) (not (file-directory-p f)) f))
     (executable-find name)))
 
+(defun py-xmlvalidate--script-candidates ()
+  "Where the repository's py-xmlvalidate.py may be, most likely first.
+package-vc and a plain clone keep this file in the repository's
+emacs/ folder, so the script is in the folder above.  Straight
+builds the package in a folder of its own, from links to the
+files of its clone; following the link to this file leads back
+to the clone."
+  (let* ((dir py-xmlvalidate--directory)
+         (real (file-name-directory
+                (file-truename (expand-file-name "py-xmlvalidate.el" dir)))))
+    (delete-dups
+     (mapcar (lambda (d) (expand-file-name "py-xmlvalidate.py" d))
+             (list (expand-file-name ".." dir) dir
+                   (expand-file-name ".." real) real)))))
+
 (defun py-xmlvalidate--script ()
   "The py-xmlvalidate.py to run."
-  (expand-file-name (or py-xmlvalidate-script
-                        (expand-file-name "../py-xmlvalidate.py" py-xmlvalidate--directory))))
+  (expand-file-name
+   (or py-xmlvalidate-script
+       (let ((candidates (py-xmlvalidate--script-candidates)))
+         (or (seq-find #'file-readable-p candidates) (car candidates))))))
 
 (defun py-xmlvalidate--applicable-p ()
   "Whether this buffer is one to check: it has a schema to go by."

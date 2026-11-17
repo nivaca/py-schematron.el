@@ -100,6 +100,33 @@
                  "py-xmlvalidate.py failed without a message.")))
 
 
+(ert-deftest pyxv-script-lookup ()
+  "The script is found above this file, and through a Straight-style link."
+  (let* ((root (make-temp-file "pyxv-lookup-" t))
+         (clone (expand-file-name "repos/pkg/" root))
+         (build (expand-file-name "build/pkg/" root)))
+    (unwind-protect
+        (progn
+          (make-directory (expand-file-name "emacs" clone) t)
+          (make-directory build t)
+          (with-temp-file (expand-file-name "py-xmlvalidate.py" clone))
+          (with-temp-file (expand-file-name "emacs/py-xmlvalidate.el" clone))
+          (make-symbolic-link (expand-file-name "emacs/py-xmlvalidate.el" clone)
+                              (expand-file-name "py-xmlvalidate.el" build))
+          (let ((py-xmlvalidate-script nil))
+            ;; package-vc, a clone: the folder above
+            (let ((py-xmlvalidate--directory (expand-file-name "emacs/" clone)))
+              (should (equal (py-xmlvalidate--script)
+                             (expand-file-name "py-xmlvalidate.py" clone))))
+            ;; Straight: the build folder, where the .el is a link
+            (let ((py-xmlvalidate--directory build))
+              (should (equal (file-truename (py-xmlvalidate--script))
+                             (file-truename (expand-file-name "py-xmlvalidate.py" clone)))))
+            ;; the setting wins
+            (let ((py-xmlvalidate-script "~/x.py"))
+              (should (equal (py-xmlvalidate--script) (expand-file-name "~/x.py"))))))
+      (delete-directory root t))))
+
 ;;;; With the real programs
 
 (defvar pyxv-test--dir nil "Temporary folder of the running test.")
