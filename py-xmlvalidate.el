@@ -4,7 +4,7 @@
 ;; Copyright (C) 2026 Nicolas Vaughan <nicolasvaughan@proton.me>
 
 ;; Author: Nicolas Vaughan <nicolasvaughan@proton.me>
-;; Version: 0.1.2
+;; Version: 0.2.0
 ;; Package-Requires: ((emacs "31.1"))
 ;; Keywords: languages, xml, tools
 ;; URL: https://codeberg.org/nivaca/py-xmlvalidate
@@ -26,15 +26,24 @@
 
 ;;; Commentary:
 
-;; A Flymake backend that checks XML documents, TEI editions in
-;; particular, against the Schematron rules of their schema, with the
-;; program py-xmlvalidate.py of this same repository.  When the schema is
-;; a RelaxNG file, the structure is also checked with jing.
+;; A Flymake backend and a Flycheck checker that check XML documents,
+;; TEI editions in particular, against the Schematron rules of their
+;; schema, with the program py-xmlvalidate.py of this same repository.
+;; When the schema is a RelaxNG file, the structure is also checked with
+;; jing.  Flycheck is used when it is installed, Flymake otherwise (see
+;; `py-xmlvalidate-frontend').
+;;
+;; In nxml-mode, the document's RelaxNG schema is also given to nxml,
+;; converted to the compact syntax with trang, so that completion
+;; (C-RET) offers the elements and attributes the schema allows and
+;; nxml's own validation knows the schema (see
+;; `py-xmlvalidate-nxml-schema').
 ;;
 ;; Errors are underlined as you type, unsaved changes included: the
 ;; buffer is checked from a private temporary copy, never from the file
-;; itself.  The message under the cursor is shown in the echo area, and
-;; M-x flymake-show-buffer-diagnostics lists them all.
+;; itself.  The message under the cursor is shown, and the checker's
+;; list (Flycheck's C-c ! l, Flymake's M-x flymake-show-buffer-diagnostics)
+;; shows them all.
 ;;
 ;; The schema is taken from the document's <?xml-model?> processing
 ;; instructions, as in oXygen and in the VS Code extension; remote
@@ -131,6 +140,30 @@ Larger buffers are checked when they are opened and saved only.
 When nil, every buffer is checked as you type.  Takes effect
 when `py-xmlvalidate-mode' is turned on."
   :type '(choice (const :tag "No limit" nil) natnum))
+
+(defcustom py-xmlvalidate-frontend 'auto
+  "Which checker shows the problems.
+`auto' uses Flycheck when it is installed, and Flymake otherwise.
+Takes effect when `py-xmlvalidate-mode' is turned on."
+  :type '(choice (const :tag "Flycheck if installed, else Flymake" auto)
+                 (const :tag "Flymake" flymake)
+                 (const :tag "Flycheck" flycheck)))
+
+(defcustom py-xmlvalidate-nxml-schema t
+  "Whether to give `nxml-mode' the document's RelaxNG schema.
+After a check whose schema is RelaxNG, the schema is converted to
+the compact syntax with trang (see `py-xmlvalidate-trang'), kept in
+a cache, and set as the buffer's nxml schema, for completion and
+nxml's own validation.  A schema chosen otherwise for nxml (for
+example through schemas.xml) is never replaced."
+  :type 'boolean)
+
+(defcustom py-xmlvalidate-trang "trang"
+  "The trang converter, for `py-xmlvalidate-nxml-schema'.
+A program name, or a list: a command and its first arguments, as
+  (\"java\" \"-jar\" \"~/bin/trang.jar\")
+The input and output options and files are added after them."
+  :type '(choice string (repeat string)))
 
 (defconst py-xmlvalidate--log-buffer "*py-xmlvalidate log*"
   "Buffer that keeps what py-xmlvalidate.py and jing print on stderr.")
@@ -394,120 +427,126 @@ started), stdout and stderr.  NAME names the process."
       (file-error
        (funcall callback nil "" (error-message-string e)))))))
 
+(defun py-xmlvalidate--region (it)
+  "Buffer positions (BEG . END) to mark for the problem IT."
+  (let* ((line (min (max (or (plist-get it :line) 1) 1)
+                    (line-number-at-pos (point-max))))
+         (bounds (save-excursion
+                   (goto-char (point-min))
+                   (forward-line (1- line))
+                   (cons (point) (line-end-position))))
+         (cols (py-xmlvalidate--underline
+                (buffer-substring-no-properties (car bounds) (cdr bounds))
+                (plist-get it :col)))
+         (beg (+ (car bounds) (car cols)))
+         (end (+ (car bounds) (cdr cols))))
+    (when (= beg end)                     ; an empty line: mark one character
+      (setq end (min (1+ beg) (point-max)))
+      (when (= beg end) (setq beg (max (1- end) (point-min)))))
+    (cons beg end)))
+
 (defun py-xmlvalidate--diagnostics (items)
   "Flymake diagnostics, in the current buffer, for ITEMS."
   (save-restriction
     (widen)
     (mapcar
      (lambda (it)
-       (let* ((line (min (max (or (plist-get it :line) 1) 1)
-                         (line-number-at-pos (point-max))))
-              (bounds (save-excursion
-                        (goto-char (point-min))
-                        (forward-line (1- line))
-                        (cons (point) (line-end-position))))
-              (cols (py-xmlvalidate--underline
-                     (buffer-substring-no-properties (car bounds) (cdr bounds))
-                     (plist-get it :col)))
-              (beg (+ (car bounds) (car cols)))
-              (end (+ (car bounds) (cdr cols))))
-         (when (= beg end)                ; an empty line: mark one character
-           (setq end (min (1+ beg) (point-max)))
-           (when (= beg end) (setq beg (max (1- end) (point-min)))))
+       (let ((region (py-xmlvalidate--region it)))
          (flymake-make-diagnostic
-          (current-buffer) beg end (plist-get it :type)
+          (current-buffer) (car region) (cdr region) (plist-get it :type)
           (list (plist-get it :origin) (plist-get it :code) (plist-get it :message)))))
      items)))
 
-(defun py-xmlvalidate-flymake (report-fn &rest _args)
-  "Flymake backend: check the buffer, then call REPORT-FN.
-Each call cancels the check still under way, if any."
+(defun py-xmlvalidate--check (done)
+  "Check the buffer, then call DONE in it with the problems found.
+DONE gets the list of problems (see `py-xmlvalidate--item') and the
+schema the check used, as (PATH . TYPE), or nil when there was none.
+A check still under way in the buffer is cancelled first."
   (py-xmlvalidate--kill)
-  (if (not (py-xmlvalidate--applicable-p))
-      (funcall report-fn nil)
-    (let* ((file buffer-file-name)
-           (tmpdir (make-temp-file "py-xmlvalidate-" t))
-           (input (expand-file-name (if file (file-name-nondirectory file) "document.xml")
-                                    tmpdir))
-           (refresh py-xmlvalidate--refresh)
-           (schema (and py-xmlvalidate-schema
-                        (expand-file-name py-xmlvalidate-schema)))
-           (python py-xmlvalidate-python)
-           (run (list :tmpdir tmpdir :procs nil :buffers nil)))
-      (setq py-xmlvalidate--refresh nil
-            py-xmlvalidate--run run)
-      ;; The buffer's text, saved or not, goes to a private copy;
-      ;; --as makes py-xmlvalidate.py resolve relative xml-model hrefs and
-      ;; report as if it were the real file.
-      (let ((coding-system-for-write (or buffer-file-coding-system 'utf-8-unix)))
-        (write-region nil nil input nil 'nomessage))
-      (plist-put run :timer
-                 (run-with-timer
-                  py-xmlvalidate-timeout nil
-                  (let ((source (current-buffer)))
-                    (lambda ()
-                      (when (and (buffer-live-p source)
-                                 (eq run (buffer-local-value 'py-xmlvalidate--run source)))
-                        (with-current-buffer source
-                          (py-xmlvalidate--kill)
-                          (funcall report-fn
-                                   (py-xmlvalidate--diagnostics
-                                    (list (py-xmlvalidate--item
-                                           nil (format "The check was abandoned after %d s (py-xmlvalidate-timeout)."
-                                                       py-xmlvalidate-timeout)
-                                           :error "py-xmlvalidate"))))))))))
-      (py-xmlvalidate--start
-       run "py-xmlvalidate" (py-xmlvalidate--program python)
-       (append (list (py-xmlvalidate--script) "--json")
-               (and refresh '("--refresh"))
-               (and schema (list (pcase py-xmlvalidate-schema-type
-                                   ('sch "-s") ('odd "-o") (_ "-r"))
-                                 schema))
-               (and file (list "--as" file))
-               (list input))
-       (lambda (code stdout stderr)
-         (let ((json (and code (string-prefix-p "{" (string-trim-left stdout))
-                          (ignore-errors (json-parse-string stdout :null-object nil :false-object nil)))))
-           (when refresh
-             (py-xmlvalidate--say-refreshed stderr json))
-           (if (null json)
-               (py-xmlvalidate--finish
-                run report-fn
-                (list (py-xmlvalidate--item
-                       nil
-                       (if code
-                           (py-xmlvalidate--explain-failure stderr python)
-                         (format "Could not run the Python interpreter \"%s\".  Set `py-xmlvalidate-python' to a Python that has saxonche and lxml (M-x py-xmlvalidate-check-setup)."
-                                 python))
-                       :error "py-xmlvalidate")))
-             (let* ((items (py-xmlvalidate--json-items json))
-                    (source (gethash "source" json))
-                    (malformed (seq-some (lambda (d) (gethash "error" d))
-                                         (gethash "documents" json))))
-               (if (and py-xmlvalidate-relaxng source
-                        (equal (gethash "type" source) "rng")
-                        (py-xmlvalidate--program py-xmlvalidate-jing))
-                   (py-xmlvalidate--start
-                    run "py-xmlvalidate-jing" (py-xmlvalidate--program py-xmlvalidate-jing)
-                    (list (gethash "path" source) input)
-                    (lambda (jcode jout jerr)
-                      (py-xmlvalidate--finish
-                       run report-fn
-                       (append items
-                               (if (memq jcode '(0 1))
-                                   (py-xmlvalidate--jing-items jout input malformed)
-                                 (list (py-xmlvalidate--item
-                                        nil (format "jing failed: %s"
-                                                    (car (last (split-string (string-trim (concat jerr jout)) "\n"))))
-                                        :warning "RelaxNG")))))))
-                 (py-xmlvalidate--finish run report-fn items))))))))))
+  (let* ((file buffer-file-name)
+         (tmpdir (make-temp-file "py-xmlvalidate-" t))
+         (input (expand-file-name (if file (file-name-nondirectory file) "document.xml")
+                                  tmpdir))
+         (refresh py-xmlvalidate--refresh)
+         (schema (and py-xmlvalidate-schema
+                      (expand-file-name py-xmlvalidate-schema)))
+         (python py-xmlvalidate-python)
+         (run (list :tmpdir tmpdir :procs nil :buffers nil)))
+    (setq py-xmlvalidate--refresh nil
+          py-xmlvalidate--run run)
+    ;; The buffer's text, saved or not, goes to a private copy;
+    ;; --as makes py-xmlvalidate.py resolve relative xml-model hrefs and
+    ;; report as if it were the real file.
+    (let ((coding-system-for-write (or buffer-file-coding-system 'utf-8-unix)))
+      (write-region nil nil input nil 'nomessage))
+    (plist-put run :timer
+               (run-with-timer
+                py-xmlvalidate-timeout nil
+                (let ((source (current-buffer)))
+                  (lambda ()
+                    (when (and (buffer-live-p source)
+                               (eq run (buffer-local-value 'py-xmlvalidate--run source)))
+                      (with-current-buffer source
+                        (py-xmlvalidate--finish
+                         run done
+                         (list (py-xmlvalidate--item
+                                nil (format "The check was abandoned after %d s (py-xmlvalidate-timeout)."
+                                            py-xmlvalidate-timeout)
+                                :error "py-xmlvalidate")))))))))
+    (py-xmlvalidate--start
+     run "py-xmlvalidate" (py-xmlvalidate--program python)
+     (append (list (py-xmlvalidate--script) "--json")
+             (and refresh '("--refresh"))
+             (and schema (list (pcase py-xmlvalidate-schema-type
+                                 ('sch "-s") ('odd "-o") (_ "-r"))
+                               schema))
+             (and file (list "--as" file))
+             (list input))
+     (lambda (code stdout stderr)
+       (let ((json (and code (string-prefix-p "{" (string-trim-left stdout))
+                        (ignore-errors (json-parse-string stdout :null-object nil :false-object nil)))))
+         (when refresh
+           (py-xmlvalidate--say-refreshed stderr json))
+         (if (null json)
+             (py-xmlvalidate--finish
+              run done
+              (list (py-xmlvalidate--item
+                     nil
+                     (if code
+                         (py-xmlvalidate--explain-failure stderr python)
+                       (format "Could not run the Python interpreter \"%s\".  Set `py-xmlvalidate-python' to a Python that has saxonche and lxml (M-x py-xmlvalidate-check-setup)."
+                               python))
+                     :error "py-xmlvalidate")))
+           (let* ((items (py-xmlvalidate--json-items json))
+                  (source (gethash "source" json))
+                  (used (and source (cons (gethash "path" source) (gethash "type" source))))
+                  (malformed (seq-some (lambda (d) (gethash "error" d))
+                                       (gethash "documents" json))))
+             (if (and py-xmlvalidate-relaxng used
+                      (equal (cdr used) "rng")
+                      (py-xmlvalidate--program py-xmlvalidate-jing))
+                 (py-xmlvalidate--start
+                  run "py-xmlvalidate-jing" (py-xmlvalidate--program py-xmlvalidate-jing)
+                  (list (car used) input)
+                  (lambda (jcode jout jerr)
+                    (py-xmlvalidate--finish
+                     run done
+                     (append items
+                             (if (memq jcode '(0 1))
+                                 (py-xmlvalidate--jing-items jout input malformed)
+                               (list (py-xmlvalidate--item
+                                      nil (format "jing failed: %s"
+                                                  (car (last (split-string (string-trim (concat jerr jout)) "\n"))))
+                                      :warning "RelaxNG"))))
+                     used)))
+               (py-xmlvalidate--finish run done items used)))))))))
 
-(defun py-xmlvalidate--finish (run report-fn items)
-  "Report ITEMS through REPORT-FN and end RUN."
-  (funcall report-fn (py-xmlvalidate--diagnostics items))
+(defun py-xmlvalidate--finish (run done items &optional used)
+  "End RUN and give DONE the ITEMS and the schema USED."
   (when (eq run py-xmlvalidate--run)
     (setq py-xmlvalidate--run nil))
-  (py-xmlvalidate--cleanup run))
+  (py-xmlvalidate--cleanup run)
+  (funcall done items used))
 
 (defun py-xmlvalidate--say-refreshed (stderr json)
   "Tell what a --refresh run did, from its STDERR and JSON output."
@@ -521,32 +560,287 @@ Each call cancels the check still under way, if any."
                py-xmlvalidate--log-buffer))))
 
 
+;;;; Flymake
+
+(defun py-xmlvalidate-flymake (report-fn &rest _args)
+  "Flymake backend: check the buffer, then call REPORT-FN.
+Each call cancels the check still under way, if any."
+  (py-xmlvalidate--kill)
+  (if (not (py-xmlvalidate--applicable-p))
+      (funcall report-fn nil)
+    (py-xmlvalidate--check
+     (lambda (items used)
+       (funcall report-fn (py-xmlvalidate--diagnostics items))
+       (py-xmlvalidate--nxml-schema used)))))
+
+
+;;;; Flycheck
+
+(declare-function flycheck-define-generic-checker "ext:flycheck")
+(declare-function flycheck-error-new-at-pos "ext:flycheck")
+(declare-function flycheck-buffer "ext:flycheck")
+(declare-function flycheck-mode "ext:flycheck")
+(defvar flycheck-checker)
+(defvar flycheck-checkers)
+(defvar flycheck-mode)
+(defvar flycheck-check-syntax-automatically)
+(defvar py-xmlvalidate-mode)
+
+(defvar py-xmlvalidate--flycheck-defined nil
+  "Whether the Flycheck checker `py-xmlvalidate' has been defined.")
+
+(defun py-xmlvalidate--flycheck-define ()
+  "Define the Flycheck checker `py-xmlvalidate', once, for this major mode.
+Flycheck has no `trusted-content' rule of its own, so the checker's
+predicate applies it, as Flymake does."
+  (unless py-xmlvalidate--flycheck-defined
+    (flycheck-define-generic-checker 'py-xmlvalidate
+      "Schematron, RELAX NG and well-formedness checks of XML/TEI documents,
+with py-xmlvalidate.py and jing.  See `py-xmlvalidate-mode'."
+      :start #'py-xmlvalidate--flycheck-start
+      :interrupt (lambda (_checker _context) (py-xmlvalidate--kill))
+      :modes '(nxml-mode xml-mode)
+      :predicate (lambda () (and py-xmlvalidate-mode (trusted-content-p))))
+    (add-to-list 'flycheck-checkers 'py-xmlvalidate t)
+    (setq py-xmlvalidate--flycheck-defined t))
+  ;; Flycheck wants a checker's major modes; the mode may be turned on
+  ;; in others than nxml-mode, so they are added as they come.
+  (unless (memq major-mode (get 'py-xmlvalidate 'flycheck-modes))
+    (put 'py-xmlvalidate 'flycheck-modes
+         (cons major-mode (get 'py-xmlvalidate 'flycheck-modes)))))
+
+(defun py-xmlvalidate--flycheck-start (checker callback)
+  "Start a check for Flycheck's CHECKER; report through CALLBACK."
+  (if (not (py-xmlvalidate--applicable-p))
+      (funcall callback 'finished nil)
+    (py-xmlvalidate--check
+     (lambda (items used)
+       (funcall callback 'finished (py-xmlvalidate--flycheck-errors items checker))
+       (py-xmlvalidate--nxml-schema used))))
+  nil)
+
+(defun py-xmlvalidate--flycheck-errors (items checker)
+  "Flycheck errors of CHECKER, in the current buffer, for ITEMS."
+  (save-restriction
+    (widen)
+    (mapcar
+     (lambda (it)
+       (let ((region (py-xmlvalidate--region it)))
+         (flycheck-error-new-at-pos
+          (car region)
+          (pcase (plist-get it :type) (:warning 'warning) (:note 'info) (_ 'error))
+          (format "%s: %s" (plist-get it :origin) (plist-get it :message))
+          :end-pos (cdr region) :checker checker :id (plist-get it :code))))
+     items)))
+
+
+;;;; The schema for nxml
+
+(declare-function rng-set-schema-file-1 "rng-loc" (filename))
+(defvar rng-current-schema-file-name)
+
+(defvar-local py-xmlvalidate--nxml-rnc nil
+  "The compact schema this package gave nxml in this buffer, if any.")
+
+(defvar py-xmlvalidate--converting (make-hash-table :test #'equal)
+  "Conversions under way: compact schema file -> buffers waiting for it.")
+
+(defvar py-xmlvalidate--trang-warned nil
+  "Whether the missing trang has already been reported.")
+
+(defconst py-xmlvalidate--word-pattern "(\\p{L}|\\p{N}|\\p{P}|\\p{S})+"
+  "TEI's pattern for teidata.word, as it appears in the compact schema.")
+
+(defconst py-xmlvalidate--word-pattern-for-nxml
+  "(\\p{L}|\\p{N}|\\p{P}|\\p{S}|[!-/:-@\\[-`{-~¡-¿×÷])+"
+  "The pattern given to nxml instead of `py-xmlvalidate--word-pattern'.
+nxml's tables for \\p{P} and \\p{S} leave out ASCII and Latin-1
+punctuation and symbols such as # % ! @ §, so it would reject
+values like ed=\"#U2\" that the schema allows.  The explicit ranges
+make nxml's copy a little more permissive than the schema, never
+stricter; the full check is still jing's.")
+
+(defun py-xmlvalidate--rnc-file (rng)
+  "Where the compact version of the schema RNG is kept."
+  (expand-file-name
+   (format "%s-%s.rnc" (substring (md5 (file-truename rng)) 0 12) (file-name-base rng))
+   (locate-user-emacs-file "py-xmlvalidate/rnc/")))
+
+(defun py-xmlvalidate--trang-command ()
+  "The trang command as a list, or nil if it cannot be run."
+  (let* ((spec (if (stringp py-xmlvalidate-trang) (list py-xmlvalidate-trang) py-xmlvalidate-trang))
+         (program (and spec (py-xmlvalidate--program (car spec)))))
+    (and program
+         (cons program (mapcar (lambda (a) (if (string-prefix-p "~" a) (expand-file-name a) a))
+                               (cdr spec))))))
+
+(defun py-xmlvalidate--nxml-eligible-p ()
+  "Whether this package may set the buffer's nxml schema."
+  (and py-xmlvalidate-nxml-schema
+       (derived-mode-p 'nxml-mode)
+       (boundp 'rng-current-schema-file-name)
+       (or (null rng-current-schema-file-name)        ; nxml's vacuous schema
+           (equal rng-current-schema-file-name py-xmlvalidate--nxml-rnc))))
+
+(defun py-xmlvalidate--nxml-schema (used)
+  "Give nxml the RELAX NG schema USED by the check, as (PATH . TYPE)."
+  (when (and used (equal (cdr used) "rng") (car used)
+             (file-readable-p (car used)) (py-xmlvalidate--nxml-eligible-p))
+    (let* ((rng (car used))
+           (rnc (py-xmlvalidate--rnc-file rng)))
+      (cond
+       ((and (file-exists-p rnc) (not (file-newer-than-file-p rng rnc)))
+        (py-xmlvalidate--nxml-apply rnc))
+       ((gethash rnc py-xmlvalidate--converting)
+        (cl-pushnew (current-buffer) (gethash rnc py-xmlvalidate--converting)))
+       (t (py-xmlvalidate--convert rng rnc))))))
+
+(defun py-xmlvalidate--nxml-apply (rnc)
+  "Set the compact schema RNC as the buffer's nxml schema.
+`rng-set-schema-file-1' is used, not `rng-set-schema-file', which
+would offer to save the schema's location in a schemas.xml file next
+to the document.  nxml revalidates by itself when the schema changes."
+  (when (and (py-xmlvalidate--nxml-eligible-p)
+             (not (equal rng-current-schema-file-name rnc)))
+    (condition-case err
+        (progn
+          (rng-set-schema-file-1 rnc)
+          (setq py-xmlvalidate--nxml-rnc rnc))
+      (error
+       (py-xmlvalidate--log (format "nxml could not load %s: %s" rnc (error-message-string err)))))))
+
+(defun py-xmlvalidate--convert (rng rnc)
+  "Convert RNG to the compact schema RNC with trang, then apply it."
+  (let ((command (py-xmlvalidate--trang-command)))
+    (if (null command)
+        (unless py-xmlvalidate--trang-warned
+          (setq py-xmlvalidate--trang-warned t)
+          (message "py-xmlvalidate: trang not found (%s), so nxml gets no schema; see `py-xmlvalidate-trang'"
+                   py-xmlvalidate-trang))
+      (make-directory (file-name-directory rnc) t)
+      (let* ((tmpdir (make-temp-file "py-xmlvalidate-rnc-" t))
+             (out (expand-file-name "schema.rnc" tmpdir))
+             (log (generate-new-buffer " *py-xmlvalidate-trang*")))
+        (puthash rnc (list (current-buffer)) py-xmlvalidate--converting)
+        (condition-case e
+            (make-process
+             :name "py-xmlvalidate-trang" :buffer log :noquery t :connection-type 'pipe
+             :command (append command (list "-I" "rng" "-O" "rnc" rng out))
+             :sentinel
+             (lambda (p _event)
+               (when (memq (process-status p) '(exit signal))
+                 (let ((waiting (gethash rnc py-xmlvalidate--converting)))
+                   (remhash rnc py-xmlvalidate--converting)
+                   (if (and (eq (process-status p) 'exit) (eq (process-exit-status p) 0)
+                            (file-exists-p out))
+                       (progn
+                         (py-xmlvalidate--write-rnc out rnc)
+                         (dolist (b waiting)
+                           (when (buffer-live-p b)
+                             (with-current-buffer b (py-xmlvalidate--nxml-apply rnc)))))
+                     (py-xmlvalidate--log (format "trang could not convert %s:\n%s" rng
+                                                  (with-current-buffer log (buffer-string))))))
+                 (kill-buffer log)
+                 (delete-directory tmpdir t))))
+          (file-error
+           (remhash rnc py-xmlvalidate--converting)
+           (kill-buffer log)
+           (delete-directory tmpdir t)
+           (py-xmlvalidate--log (format "trang could not be run: %s" (error-message-string e)))))))))
+
+(defun py-xmlvalidate--write-rnc (from to)
+  "Copy the compact schema FROM to TO, adapted for nxml, atomically."
+  (let ((text (with-temp-buffer
+                (insert-file-contents from)
+                (goto-char (point-min))
+                (while (search-forward py-xmlvalidate--word-pattern nil t)
+                  (replace-match py-xmlvalidate--word-pattern-for-nxml t t))
+                (buffer-string)))
+        (tmp (make-temp-file (expand-file-name ".tmp-" (file-name-directory to)) nil ".rnc")))
+    (with-temp-file tmp
+      (set-buffer-file-coding-system 'utf-8-unix)
+      (insert text))
+    (rename-file tmp to t)))
+
+(defun py-xmlvalidate--nxml-forget ()
+  "Take back the schema this package gave nxml, if it is still in use."
+  (when (and py-xmlvalidate--nxml-rnc (boundp 'rng-current-schema-file-name)
+             (equal rng-current-schema-file-name py-xmlvalidate--nxml-rnc))
+    (rng-set-schema-file-1 nil))
+  (setq py-xmlvalidate--nxml-rnc nil))
+
+
 ;;;; Commands and the minor mode
+
+(defvar-local py-xmlvalidate--using nil
+  "The checker this buffer uses: `flymake' or `flycheck'.")
+
+(defvar-local py-xmlvalidate--own-flycheck nil
+  "Whether `py-xmlvalidate-mode' turned Flycheck on in this buffer.")
+
+(defun py-xmlvalidate--frontend ()
+  "The checker to use, from `py-xmlvalidate-frontend'."
+  (pcase py-xmlvalidate-frontend
+    ('flymake 'flymake)
+    ('flycheck 'flycheck)
+    (_ (if (or (featurep 'flycheck) (locate-library "flycheck")) 'flycheck 'flymake))))
+
+(defun py-xmlvalidate--start-check ()
+  "Start a check with the buffer's checker."
+  (if (eq py-xmlvalidate--using 'flycheck)
+      (flycheck-buffer)
+    (flymake-start nil t)))
 
 ;;;###autoload
 (define-minor-mode py-xmlvalidate-mode
-  "Check the buffer against its Schematron rules, with Flymake.
+  "Check the buffer against its Schematron rules, with Flycheck or Flymake.
 The schema comes from the document's <?xml-model?> processing
 instructions, or from `py-xmlvalidate-schema'.  Problems are
-underlined as you type; \\[flymake-show-buffer-diagnostics] lists them.
+underlined as you type, and the checker's list shows them all.
+`py-xmlvalidate-frontend' chooses the checker.  In `nxml-mode' the
+document's RELAX NG schema is also given to nxml, for completion
+\(see `py-xmlvalidate-nxml-schema').
 
 Only files in `trusted-content' are checked, because the schema
 named in a document can make Saxon read files and fetch URLs."
   :lighter nil
   (if py-xmlvalidate-mode
-      (progn
-        (add-hook 'flymake-diagnostic-functions #'py-xmlvalidate-flymake nil t)
-        (when (and py-xmlvalidate-live-max-size
-                   (> (buffer-size) py-xmlvalidate-live-max-size))
-          (setq-local flymake-no-changes-timeout nil))
+      (let ((big (and py-xmlvalidate-live-max-size
+                      (> (buffer-size) py-xmlvalidate-live-max-size))))
+        (setq py-xmlvalidate--using (py-xmlvalidate--frontend))
         (add-hook 'kill-buffer-hook #'py-xmlvalidate--kill nil t)
         (unless (trusted-content-p)
           (py-xmlvalidate--warn-untrusted))
-        (flymake-mode 1))
-    (remove-hook 'flymake-diagnostic-functions #'py-xmlvalidate-flymake t)
-    (kill-local-variable 'flymake-no-changes-timeout)
+        (if (eq py-xmlvalidate--using 'flycheck)
+            (progn
+              (require 'flycheck)
+              (py-xmlvalidate--flycheck-define)
+              (setq-local flycheck-checker 'py-xmlvalidate)
+              (when big
+                (setq-local flycheck-check-syntax-automatically
+                            (cl-set-difference flycheck-check-syntax-automatically
+                                               '(idle-change new-line))))
+              (if flycheck-mode
+                  (flycheck-buffer)
+                (setq py-xmlvalidate--own-flycheck t)
+                (flycheck-mode 1)))
+          (add-hook 'flymake-diagnostic-functions #'py-xmlvalidate-flymake nil t)
+          (when big
+            (setq-local flymake-no-changes-timeout nil))
+          (flymake-mode 1)))
     (py-xmlvalidate--kill)
-    (when flymake-mode (flymake-start))))
+    (if (eq py-xmlvalidate--using 'flycheck)
+        (progn
+          (kill-local-variable 'flycheck-checker)
+          (kill-local-variable 'flycheck-check-syntax-automatically)
+          (cond (py-xmlvalidate--own-flycheck (flycheck-mode -1))
+                (flycheck-mode (flycheck-buffer))))
+      (remove-hook 'flymake-diagnostic-functions #'py-xmlvalidate-flymake t)
+      (kill-local-variable 'flymake-no-changes-timeout)
+      (when flymake-mode (flymake-start)))
+    (setq py-xmlvalidate--own-flycheck nil
+          py-xmlvalidate--using nil)
+    (py-xmlvalidate--nxml-forget)))
 
 (defvar py-xmlvalidate--warned (make-hash-table :test #'equal)
   "Files already warned about as untrusted, in this session.")
@@ -612,7 +906,7 @@ in the kill ring, to paste into your init file."
             (dolist (b (buffer-list))
               (with-current-buffer b
                 (when (and py-xmlvalidate-mode (trusted-content-p))
-                  (flymake-start nil t))))
+                  (py-xmlvalidate--start-check))))
             (message "py-xmlvalidate: trusted %s for this session; to keep it, paste into your init file (it is in the kill ring): %s"
                      entry line)))))))
 
@@ -626,7 +920,7 @@ in the kill ring, to paste into your init file."
   (interactive)
   (py-xmlvalidate--ensure-mode)
   (py-xmlvalidate--require-trust)
-  (flymake-start nil t))
+  (py-xmlvalidate--start-check))
 
 ;;;###autoload
 (defun py-xmlvalidate-refresh-schema ()
@@ -638,7 +932,7 @@ a downloaded schema in its cache for a day."
   (py-xmlvalidate--require-trust)
   (setq py-xmlvalidate--refresh t)
   (message "py-xmlvalidate: refreshing the schema...")
-  (flymake-start nil t))
+  (py-xmlvalidate--start-check))
 
 ;;;###autoload
 (defun py-xmlvalidate-report ()
@@ -721,7 +1015,8 @@ STATUS and MSG are as in `compilation-exit-message-function'."
 
 ;;;###autoload
 (defun py-xmlvalidate-check-setup ()
-  "Say whether Python, its libraries, the script and jing are in place."
+  "Say whether Python, its libraries, the script, jing and trang are in place.
+Also says which checker, Flycheck or Flymake, is used."
   (interactive)
   (let* ((python (py-xmlvalidate--program py-xmlvalidate-python))
          (script (py-xmlvalidate--script))
@@ -742,7 +1037,19 @@ STATUS and MSG are as in `compilation-exit-message-function'."
       (say (file-readable-p script)
            (format "Script: %s%s" script (if (file-readable-p script) "" " (missing; set `py-xmlvalidate-script')")))
       (say jing (if jing (format "jing: %s" jing)
-                  (format "jing: \"%s\" not found; the RelaxNG check is skipped (optional)" py-xmlvalidate-jing))))
+                  (format "jing: \"%s\" not found; the RelaxNG check is skipped (optional)" py-xmlvalidate-jing)))
+      (let ((frontend (py-xmlvalidate--frontend)))
+        (say t (format "Checker: %s%s" frontend
+                       (if (eq py-xmlvalidate-frontend 'auto)
+                           (format " (py-xmlvalidate-frontend is auto: Flycheck %s)"
+                                   (if (eq frontend 'flycheck) "is installed" "is not installed"))
+                         ""))))
+      (when py-xmlvalidate-nxml-schema
+        (let ((trang (py-xmlvalidate--trang-command)))
+          (say trang (if trang
+                         (format "trang: %s (nxml gets the document's schema)" (string-join trang " "))
+                       (format "trang: %S not found; nxml gets no schema (optional; see `py-xmlvalidate-trang')"
+                               py-xmlvalidate-trang))))))
     (with-current-buffer (get-buffer-create "*py-xmlvalidate setup*")
       (let ((inhibit-read-only t))
         (erase-buffer)

@@ -24,6 +24,8 @@
 (require 'ert)
 (require 'cl-lib)
 (require 'nxml-mode)
+(require 'rng-valid)
+(require 'rng-nxml)
 (eval-and-compile
   (add-to-list 'load-path
                (expand-file-name ".." (file-name-directory
@@ -148,7 +150,9 @@
           <sch:assert test=\"count(tei:p) le %d\">A <sch:name/> may contain at most %d p, found <sch:value-of select=\"count(tei:p)\"/></sch:assert>
         </sch:rule>
       </sch:pattern>
-      <oneOrMore><element name=\"p\"><zeroOrMore><choice><text/><element name=\"note\"><text/></element></choice></zeroOrMore></element></oneOrMore>
+      <oneOrMore><element name=\"p\">
+        <optional><attribute name=\"ed\"><list><oneOrMore><data type=\"token\" datatypeLibrary=\"http://www.w3.org/2001/XMLSchema-datatypes\"><param name=\"pattern\">(\\p{L}|\\p{N}|\\p{P}|\\p{S})+</param></data></oneOrMore></list></attribute></optional>
+        <zeroOrMore><choice><text/><element name=\"note\"><text/></element></choice></zeroOrMore></element></oneOrMore>
     </element>
   </start>
 </grammar>
@@ -174,6 +178,13 @@
             (py-xmlvalidate-script (expand-file-name "bin/py-xmlvalidate.py" pyxv-test--dir))
             (py-xmlvalidate-live-max-size nil)
             (py-xmlvalidate-schema nil)
+            (py-xmlvalidate-frontend 'flymake)
+            (py-xmlvalidate-nxml-schema nil)
+            (py-xmlvalidate-trang (or (and (getenv "PYXV_TRANG")
+                                           (split-string-shell-command (getenv "PYXV_TRANG")))
+                                      "no-such-trang"))
+            (py-xmlvalidate--trang-warned nil)
+            (user-emacs-directory (file-name-as-directory (expand-file-name "emacs.d" pyxv-test--dir)))
             (trusted-content (list (file-name-as-directory
                                     (abbreviate-file-name (file-truename pyxv-test--dir))))))
        (make-directory temporary-file-directory)
@@ -492,5 +503,246 @@ Flymake's own warnings are left out."
     (with-current-buffer "*py-xmlvalidate setup*"
       (should (string-match-p "ok   Python: .*with saxonche and lxml" (buffer-string)))
       (should (string-match-p "ok   Script: " (buffer-string))))))
+
+;;;; Flycheck
+
+;; Flycheck is loaded only when the tests run (from FLYCHECK_DIR).
+(defvar flycheck-last-status-change)
+(defvar flycheck-current-errors)
+(defvar flycheck-mode)
+(defvar flycheck-checker)
+(declare-function flycheck-mode "ext:flycheck")
+(declare-function flycheck-buffer "ext:flycheck")
+(declare-function flycheck-running-p "ext:flycheck")
+(declare-function flycheck-line-column-to-position "ext:flycheck")
+(declare-function flycheck-error-line "ext:flycheck")
+(declare-function flycheck-error-column "ext:flycheck")
+(declare-function flycheck-error-end-line "ext:flycheck")
+(declare-function flycheck-error-end-column "ext:flycheck")
+(declare-function flycheck-error-level "ext:flycheck")
+(declare-function flycheck-error-message "ext:flycheck")
+(declare-function flycheck-error-id "ext:flycheck")
+
+(defmacro pyxv-test--with-flycheck (&rest body)
+  "Run BODY with Flycheck loaded from FLYCHECK_DIR, and the Flycheck front end."
+  (declare (indent 0))
+  `(let ((dir (getenv "FLYCHECK_DIR")))
+     (unless (and dir (file-exists-p (expand-file-name "flycheck.el" dir)))
+       (ert-skip "FLYCHECK_DIR is not set"))
+     (add-to-list 'load-path dir)
+     (require 'flycheck)
+     (let ((py-xmlvalidate-frontend 'flycheck))
+       ,@body)))
+
+(defun pyxv-test--flycheck-check ()
+  "Check the current buffer with Flycheck; return its errors."
+  (flycheck-buffer)
+  (pyxv-test--wait (lambda () (and (not (flycheck-running-p))
+                                   (memq flycheck-last-status-change
+                                         '(finished no-checker errored interrupted suspicious))))
+                   "Flycheck")
+  flycheck-current-errors)
+
+(defun pyxv-test--flycheck-text (err)
+  "The buffer text Flycheck marks for ERR."
+  (buffer-substring (flycheck-line-column-to-position (flycheck-error-line err) (flycheck-error-column err))
+                    (flycheck-line-column-to-position (flycheck-error-end-line err)
+                                                      (flycheck-error-end-column err))))
+
+(ert-deftest pyxv-flycheck-invalid ()
+  "With Flycheck, the same problems on the same lines, with layer and pattern."
+  (pyxv-test--with-env
+    (pyxv-test--with-flycheck
+      (pyxv-test--write "invalid.xml" (concat pyxv-test--pi "\n<TEI xmlns=\"http://www.tei-c.org/ns/1.0\">\n<p>a</p>\n<p>b</p>\n<p>c<bogus/></p>\n</TEI>\n"))
+      (with-current-buffer (pyxv-test--open "invalid.xml")
+        (should (eq py-xmlvalidate--using 'flycheck))
+        (should flycheck-mode)
+        (should (eq flycheck-checker 'py-xmlvalidate))
+        (let ((errs (pyxv-test--flycheck-check)))
+          (message "%s" (mapconcat (lambda (e) (format "L%d %s %s" (flycheck-error-line e)
+                                                       (flycheck-error-level e) (flycheck-error-message e)))
+                                   errs "\n"))
+          (should (equal (mapcar #'flycheck-error-line errs) (if (getenv "JING") '(2 5) '(2))))
+          (let ((s (car errs)))
+            (should (eq (flycheck-error-level s) 'error))
+            (should (equal (flycheck-error-id s) "max-p"))
+            (should (string-match-p "\\`Schematron: A TEI may contain at most 2 p, found 3" (flycheck-error-message s))))
+          (when (getenv "JING")
+            (should (string-prefix-p "RelaxNG: " (flycheck-error-message (cadr errs))))
+            (should (equal (pyxv-test--flycheck-text (cadr errs)) "<bogus/>"))))
+        ;; turning the mode off turns off the Flycheck it turned on
+        (py-xmlvalidate-mode -1)
+        (should-not flycheck-mode)
+        (should-not (local-variable-p 'flycheck-checker))
+        (should-not (directory-files temporary-file-directory nil "^py-xmlvalidate-"))))))
+
+(ert-deftest pyxv-flycheck-unsaved-and-cancel ()
+  "With Flycheck, unsaved text is checked, and a new check replaces a running one."
+  (pyxv-test--with-env
+    (pyxv-test--with-flycheck
+      (pyxv-test--write "valid.xml" (concat pyxv-test--pi "\n<TEI xmlns=\"http://www.tei-c.org/ns/1.0\">\n<p>a</p>\n</TEI>\n"))
+      (with-current-buffer (pyxv-test--open "valid.xml")
+        (should (null (pyxv-test--flycheck-check)))
+        (flycheck-buffer)                          ; started, then replaced
+        (goto-char (point-min)) (forward-line 3)
+        (insert "<p>b</p>\n<p>c</p>\n")
+        (let ((errs (pyxv-test--flycheck-check)))
+          (should (equal (mapcar #'flycheck-error-line errs) '(2)))
+          (should (buffer-modified-p)))
+        (should-not (seq-filter (lambda (p) (string-prefix-p "py-xmlvalidate" (process-name p)))
+                                (process-list)))))))
+
+(ert-deftest pyxv-flycheck-untrusted ()
+  "With Flycheck too, an untrusted file is not checked, and the user is told once."
+  (pyxv-test--with-env
+    (pyxv-test--with-flycheck
+      (pyxv-test--write "invalid.xml" pyxv-test--invalid)
+      (let ((trusted-content nil)
+            (py-xmlvalidate--warned (make-hash-table :test #'equal)))
+        (pyxv-test--capturing-warnings warnings
+          (with-current-buffer (pyxv-test--open "invalid.xml")
+            (should (= (length warnings) 1))
+            (should (null (pyxv-test--flycheck-check)))
+            (should-error (py-xmlvalidate-check) :type 'user-error)
+            (should-not (directory-files temporary-file-directory nil "^py-xmlvalidate-"))
+            ;; trusting it starts the check with Flycheck
+            (cl-letf (((symbol-function 'read-multiple-choice) (lambda (&rest _) '(?f "file"))))
+              (py-xmlvalidate-trust-file))
+            (pyxv-test--wait (lambda () (and (not (flycheck-running-p))
+                                             (eq flycheck-last-status-change 'finished)))
+                             "Flycheck after trusting")
+            (should (equal (mapcar #'flycheck-error-line flycheck-current-errors) '(2)))))))))
+
+(ert-deftest pyxv-flycheck-already-on ()
+  "If Flycheck was already on, turning the mode off leaves it on."
+  (pyxv-test--with-env
+    (pyxv-test--with-flycheck
+      (pyxv-test--write "valid.xml" (concat pyxv-test--pi "\n<TEI xmlns=\"http://www.tei-c.org/ns/1.0\">\n<p>a</p>\n</TEI>\n"))
+      (find-file (expand-file-name "valid.xml" pyxv-test--dir))
+      (nxml-mode)
+      (flycheck-mode 1)
+      (py-xmlvalidate-mode 1)
+      (should-not py-xmlvalidate--own-flycheck)
+      (py-xmlvalidate-mode -1)
+      (should flycheck-mode)
+      (flycheck-mode -1))))
+
+
+;;;; The schema for nxml
+
+(defmacro pyxv-test--with-trang (&rest body)
+  "Run BODY with trang (PYXV_TRANG) and the nxml schema feature on."
+  (declare (indent 0))
+  `(progn
+     (unless (getenv "PYXV_TRANG") (ert-skip "PYXV_TRANG is not set"))
+     (let ((py-xmlvalidate-nxml-schema t))
+       ,@body)))
+
+(defun pyxv-test--nxml-ready (rnc-prefix)
+  "Wait until nxml's schema is a compact schema in the cache; return it."
+  (pyxv-test--wait (lambda () (and rng-current-schema-file-name
+                                   (string-prefix-p rnc-prefix rng-current-schema-file-name)))
+                   "the nxml schema" 60)
+  rng-current-schema-file-name)
+
+(ert-deftest pyxv-nxml-schema ()
+  "nxml gets the document's schema: completion, and validation without false errors."
+  (pyxv-test--with-env
+    (pyxv-test--with-trang
+      (pyxv-test--write "valid.xml" (concat pyxv-test--pi "\n<TEI xmlns=\"http://www.tei-c.org/ns/1.0\">\n<p ed=\"#U2 %A\">a</p>\n</TEI>\n"))
+      (with-current-buffer (pyxv-test--open "valid.xml")
+        (should (null rng-current-schema-file-name))          ; vacuous at first
+        (should (null (pyxv-test--check)))
+        (let* ((cache (expand-file-name "py-xmlvalidate/rnc/" user-emacs-directory))
+               (rnc (pyxv-test--nxml-ready cache)))
+          (should (string-suffix-p "-schema.rnc" rnc))
+          (should (equal py-xmlvalidate--nxml-rnc rnc))
+          ;; the TEI word pattern was widened for nxml
+          (should (string-search py-xmlvalidate--word-pattern-for-nxml
+                                 (with-temp-buffer (insert-file-contents rnc) (buffer-string))))
+          ;; nothing was written next to the document
+          (should-not (file-exists-p (expand-file-name "schemas.xml" pyxv-test--dir)))
+          ;; completion: inside TEI, p is offered
+          (goto-char (point-min)) (search-forward "<TEI")
+          (end-of-line)
+          (rng-set-state-after (point))
+          (should (member "p" (mapcar #'cdr (rng-match-possible-start-tag-names))))
+          ;; nxml's validation: ed="#U2 %A" is valid (nxml alone would reject it)
+          (rng-validate-mode 1)
+          (while (rng-do-some-validation))
+          (should (= rng-error-count 0))
+          ;; and an element the schema does not allow is an error
+          (goto-char (point-min)) (search-forward "</p>") (insert "<bogus/>")
+          (while (rng-do-some-validation))
+          (should (= rng-error-count 1))
+          ;; turning the mode off gives nxml back its vacuous schema
+          (py-xmlvalidate-mode -1)
+          (should (null rng-current-schema-file-name)))))))
+
+(ert-deftest pyxv-nxml-schema-cached ()
+  "A second document with the same schema uses the cached compact schema at once."
+  (pyxv-test--with-env
+    (pyxv-test--with-trang
+      (dolist (f '("a.xml" "b.xml"))
+        (pyxv-test--write f (concat pyxv-test--pi "\n<TEI xmlns=\"http://www.tei-c.org/ns/1.0\">\n<p>a</p>\n</TEI>\n")))
+      (let ((cache (expand-file-name "py-xmlvalidate/rnc/" user-emacs-directory)) first)
+        (with-current-buffer (pyxv-test--open "a.xml")
+          (pyxv-test--check)
+          (setq first (pyxv-test--nxml-ready cache)))
+        (let ((mtime (file-attribute-modification-time (file-attributes first))))
+          (with-current-buffer (pyxv-test--open "b.xml")
+            (pyxv-test--check)
+            ;; set by the time the check reports: no conversion needed
+            (should (equal rng-current-schema-file-name first))
+            (should (equal mtime (file-attribute-modification-time (file-attributes first))))))))))
+
+(ert-deftest pyxv-nxml-schema-respects-user-choice ()
+  "A schema the user gave nxml is never replaced."
+  (pyxv-test--with-env
+    (pyxv-test--with-trang
+      (pyxv-test--write "mine.rnc" "default namespace = \"http://www.tei-c.org/ns/1.0\"\nstart = element TEI { element p { text }* }\n")
+      (pyxv-test--write "valid.xml" (concat pyxv-test--pi "\n<TEI xmlns=\"http://www.tei-c.org/ns/1.0\">\n<p>a</p>\n</TEI>\n"))
+      (with-current-buffer (pyxv-test--open "valid.xml")
+        (let ((mine (expand-file-name "mine.rnc" pyxv-test--dir)))
+          (rng-set-schema-file-1 mine)
+          (pyxv-test--check)
+          (sleep-for 1)
+          (accept-process-output nil 2)
+          (should (equal rng-current-schema-file-name mine))
+          (py-xmlvalidate-mode -1)
+          (should (equal rng-current-schema-file-name mine)))))))
+
+(ert-deftest pyxv-nxml-schema-no-trang ()
+  "Without trang, one message and no error; the check itself is unaffected."
+  (pyxv-test--with-env
+    (let ((py-xmlvalidate-nxml-schema t)
+          (py-xmlvalidate-trang "no-such-trang")
+          (py-xmlvalidate--trang-warned nil))
+      (pyxv-test--write "invalid.xml" pyxv-test--invalid)
+      (with-current-buffer (pyxv-test--open "invalid.xml")
+        (should (equal (pyxv-test--lines (pyxv-test--check) "Schematron") '(2)))
+        (should py-xmlvalidate--trang-warned)
+        (should (null rng-current-schema-file-name))
+        (should (string-match-p "trang not found"
+                                (with-current-buffer "*Messages*" (buffer-string))))))))
+
+(ert-deftest pyxv-write-rnc ()
+  "The compact schema given to nxml has the TEI word pattern widened."
+  (let* ((dir (make-temp-file "pyxv-rnc-" t))
+         (from (expand-file-name "in.rnc" dir))
+         (to (expand-file-name "out.rnc" dir)))
+    (unwind-protect
+        (progn
+          (with-temp-file from
+            (insert "a = xsd:token { pattern = \"" py-xmlvalidate--word-pattern "\" }\n"
+                    "b = xsd:token { pattern = \"" py-xmlvalidate--word-pattern "\" }\n"))
+          (py-xmlvalidate--write-rnc from to)
+          (let ((text (with-temp-buffer (insert-file-contents to) (buffer-string))))
+            (should (= 2 (let ((n 0) (i 0))
+                           (while (setq i (string-search py-xmlvalidate--word-pattern-for-nxml text i))
+                             (setq n (1+ n) i (1+ i)))
+                           n)))
+            (should-not (string-search (concat "\"" py-xmlvalidate--word-pattern "\"") text))))
+      (delete-directory dir t))))
 
 ;;; py-xmlvalidate-tests.el ends here

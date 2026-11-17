@@ -1,22 +1,29 @@
 # py-xmlvalidate for Emacs
 
-A Flymake backend that checks XML documents, TEI editions in particular,
-against the Schematron rules of their schema, with `py-xmlvalidate.py`, the
-program of [py-xmlvalidate](https://codeberg.org/nivaca/py-xmlvalidate).
-When the schema is a RelaxNG file, it also checks the structure with jing.
-It needs Emacs 31 or later, and nothing from outside Emacs except Python.
+Checks XML documents, TEI editions in particular, against the Schematron
+rules of their schema, with `py-xmlvalidate.py`, the program of
+[py-xmlvalidate](https://codeberg.org/nivaca/py-xmlvalidate), and shows the
+problems with Flycheck when it is installed, or with Flymake, which comes
+with Emacs. When the schema is a RelaxNG file, it also checks the structure
+with jing, and gives the schema to nxml-mode, so that completion offers what
+the schema allows. It needs Emacs 31 or later, and nothing from outside
+Emacs except Python (trang is optional, for nxml's schema).
 
 - **When:** as you type (when typing pauses), on opening and on saving,
   for every buffer with an `<?xml-model?>`. Unsaved changes are checked
   from a private temporary copy; your file is never written.
-- **What you see:** each problem underlined, with its message in the echo
-  area when the cursor is on it; its layer (**Schematron**, **RelaxNG**,
-  or **XML** when the document is not well formed) and, for Schematron, the
-  pattern's id. A misspelt element is also flagged where it was opened.
-  The mode line shows Flymake's counts.
-- **All of them:** `M-x flymake-show-buffer-diagnostics`. `M-x
-  py-xmlvalidate-report` shows the full text report of the saved file, with
-  each line linked to the document.
+- **What you see:** each problem underlined, with its message when the
+  cursor is on it; its layer (**Schematron**, **RelaxNG**, or **XML** when
+  the document is not well formed) and, for Schematron, the pattern's id.
+  A misspelt element is also flagged where it was opened. The mode line
+  shows the counts.
+- **All of them:** Flycheck's `C-c ! l`, or `M-x
+  flymake-show-buffer-diagnostics`. `M-x py-xmlvalidate-report` shows the
+  full text report of the saved file, with each line linked to the
+  document.
+- **Completion:** in nxml-mode, `C-RET` offers the elements and attributes
+  the document's schema allows where the cursor is (see [The schema for
+  nxml](#the-schema-for-nxml)).
 
 ## Before you start
 
@@ -43,6 +50,23 @@ Emacs does not install them for you.
 3. **jing** (optional) for the RelaxNG check: `sudo dnf install jing`,
    `sudo apt install jing`, or <https://relaxng.org/jclark/jing.html>.
    Without it, only the Schematron rules are checked.
+
+4. **trang** (optional) to give nxml the schema; it needs Java. From the
+   repository's folder (Straight's clone is in
+   `~/.emacs.d/straight/repos/py-xmlvalidate`),
+
+   ```sh
+   python3 tools/install-trang.py
+   ```
+
+   downloads it from the
+   [jing-trang releases](https://github.com/relaxng/jing-trang/releases),
+   checks its SHA-1 and installs it as `trang`, the name the package looks
+   for: in `~/bin` if that folder exists, otherwise in `~/.local/bin` (with
+   its files in `~/.local/share/trang`); `--bin FOLDER` chooses another
+   folder. On Debian and Ubuntu,
+   `sudo apt install trang` also works. See
+   [The schema for nxml](#the-schema-for-nxml).
 
 ## Installation
 
@@ -124,7 +148,8 @@ Three lines, if you did not use a `use-package` form above:
 ```
 
 **Why `trusted-content`.** Since Emacs 30, Flymake checks only the files
-you trust, and this package follows that rule. A document's
+you trust, and this package follows that rule, with Flycheck too (which
+has no such rule of its own). A document's
 `<?xml-model?>` chooses the schema, and the schema's rules are XPath that
 Saxon runs: they can read files on your computer and fetch URLs. So an XML
 file from elsewhere is not checked until you put it, or its folder, in
@@ -144,6 +169,61 @@ you asked for it) ends with the same note.
 Then `M-x py-xmlvalidate-check-setup` says whether Python, its libraries,
 the script and jing are in place.
 
+## Flycheck or Flymake
+
+With `py-xmlvalidate-frontend` set to `auto` (the default), the package
+uses Flycheck when it is installed, and Flymake otherwise; `flycheck` or
+`flymake` chooses one. With Flycheck, the package selects its own checker
+in the buffer (`flycheck-checker`), turns Flycheck on if it was off (and off
+again when `py-xmlvalidate-mode` is turned off), and the problems appear in
+Flycheck's usual display: the error list on `C-c ! l`, the fringe, and
+flycheck-posframe or flycheck-inline if you use them. Flycheck's message
+starts with the layer (`Schematron:`, `RelaxNG:`, `XML:`), and the
+Schematron pattern is the error's id.
+
+## The schema for nxml
+
+nxml-mode has its own RelaxNG validation and completion, but it does not
+read `<?xml-model?>`: without a schema of its own it uses a "vacuous" one
+that allows anything, so `C-RET` offers nothing. After each check whose
+schema is RelaxNG, this package gives nxml that schema:
+
+- it converts it to the compact syntax nxml reads, with trang, and keeps the
+  result in `~/.emacs.d/py-xmlvalidate/rnc/`; it converts again only when
+  the RelaxNG file changes, so other documents with the same schema get it
+  at once;
+- it sets it as the buffer's schema without saving its location (nxml's
+  own command would offer to write a `schemas.xml` next to the document);
+- it never replaces a schema you gave nxml yourself (with
+  `M-x rng-set-schema-file` or through `schemas.xml`), and takes its own
+  back when `py-xmlvalidate-mode` is turned off.
+
+Then `C-RET` completes element and attribute names from the schema, and
+`rng-validate-mode`, if it is on, checks the structure at once, with no
+program to run.
+
+One adjustment is made in nxml's copy of the schema. nxml's tables for the
+Unicode categories `\p{P}` and `\p{S}` leave out ASCII and Latin-1
+punctuation and symbols such as `#`, `%`, `!`, `@` and `§`, so it rejects
+values that the schema allows, like `ed="#U2"` in TEI's `teidata.word`. In
+the copy for nxml, that pattern also accepts those characters explicitly.
+nxml's copy is thus a little more permissive than the schema, never
+stricter; the full check is still jing's, in the checker's list.
+
+The converter is `py-xmlvalidate-trang`: `"trang"` (what
+`tools/install-trang.py` installs), or a command line as a list, for
+example the copy inside oXygen:
+
+```elisp
+(setopt py-xmlvalidate-trang
+        '("java" "-cp" "~/bin/oxygen/lib/oxygen-patched-trang.jar"
+          "com.thaiopensource.relaxng.translate.Driver"))
+```
+
+Without trang, the package says so once and nxml keeps its vacuous schema;
+nothing else changes. `py-xmlvalidate-nxml-schema` set to `nil` turns the
+feature off.
+
 ## Commands
 
 | Command | What it does |
@@ -153,7 +233,7 @@ the script and jing are in place.
 | `py-xmlvalidate-refresh-schema` | Downloads the document's remote schema again (after it changed upstream), then checks |
 | `py-xmlvalidate-report` | Full report of the saved file, in a buffer with links to the lines |
 | `py-xmlvalidate-trust-file` | Trusts the file, or its folder, after asking; starts checking it |
-| `py-xmlvalidate-check-setup` | Says whether Python, saxonche, lxml, the script and jing are found |
+| `py-xmlvalidate-check-setup` | Says whether Python, saxonche, lxml, the script, jing and trang are found, and which checker is used |
 | `py-xmlvalidate-show-log` | What `py-xmlvalidate.py` and jing printed (schema detection, downloads, cache) |
 
 ## Settings
@@ -173,6 +253,9 @@ The settings:
 | `py-xmlvalidate-jing` | `"jing"` | The jing program |
 | `py-xmlvalidate-timeout` | `120` | Seconds after which a check is abandoned |
 | `py-xmlvalidate-live-max-size` | `nil` | Larger buffers (in characters) are checked on opening and saving only |
+| `py-xmlvalidate-frontend` | `auto` | `flycheck`, `flymake`, or `auto` (Flycheck if installed) |
+| `py-xmlvalidate-nxml-schema` | `t` | Give nxml-mode the document's RelaxNG schema, for completion |
+| `py-xmlvalidate-trang` | `"trang"` | The trang converter: a program, or a command line as a list |
 
 `py-xmlvalidate-schema` and `py-xmlvalidate-schema-type` are safe as
 file-local or directory-local variables, for documents without an
@@ -183,8 +266,9 @@ file-local or directory-local variables, for documents without an
 ((nxml-mode . ((py-xmlvalidate-schema . "schema/smed-schema.rng"))))
 ```
 
-How quickly the problems appear is Flymake's
-`flymake-no-changes-timeout` (half a second of no typing by default).
+How quickly the problems appear is Flycheck's `flycheck-idle-change-delay`,
+or Flymake's `flymake-no-changes-timeout` (half a second of no typing by
+default).
 
 ## Speed
 
@@ -202,8 +286,11 @@ From the repository's top folder:
 
 ```sh
 PYXV_PYTHON=~/.venvs/schematron/bin/python JING=jing \
+  FLYCHECK_DIR=~/.emacs.d/straight/build/flycheck PYXV_TRANG=trang \
   emacs --batch -Q -L emacs -l emacs/test/py-xmlvalidate-tests.el \
   -f ert-run-tests-batch-and-exit
 ```
 
-Without `PYXV_PYTHON`, only the tests that read the programs' output run.
+Without `PYXV_PYTHON`, only the tests that read the programs' output run;
+without `FLYCHECK_DIR` (a folder with `flycheck.el`), the Flycheck tests are
+skipped, and without `PYXV_TRANG` (trang's command line), the nxml ones.
