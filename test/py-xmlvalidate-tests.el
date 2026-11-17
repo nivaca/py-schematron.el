@@ -22,6 +22,7 @@
 ;;; Code:
 
 (require 'ert)
+(require 'cl-lib)
 (require 'nxml-mode)
 (eval-and-compile
   (add-to-list 'load-path
@@ -298,19 +299,93 @@
     (with-current-buffer (pyxv-test--open "plain.xml")
       (should (null (pyxv-test--check))))))
 
+(defconst pyxv-test--invalid
+  (concat pyxv-test--pi "\n<TEI xmlns=\"http://www.tei-c.org/ns/1.0\">\n<p>a</p>\n<p>b</p>\n<p>c</p>\n</TEI>\n")
+  "A document with one Schematron violation, on line 2.")
+
+(defmacro pyxv-test--capturing-warnings (var &rest body)
+  "Run BODY collecting in VAR the texts of the package's warnings.
+Flymake's own warnings are left out."
+  (declare (indent 1))
+  `(let ((,var nil))
+     (cl-letf (((symbol-function 'display-warning)
+                (lambda (type text &rest _)
+                  (when (eq type 'py-xmlvalidate) (push text ,var)))))
+       ,@body)))
+
 (ert-deftest pyxv-real-untrusted ()
-  "A file outside `trusted-content' is not checked, and the user is told why."
+  "A file outside `trusted-content' is not checked, and the user is told why, once."
   (pyxv-test--with-env
-    (pyxv-test--write "invalid.xml" (concat pyxv-test--pi "\n<TEI xmlns=\"http://www.tei-c.org/ns/1.0\">\n<p>a</p>\n<p>b</p>\n<p>c</p>\n</TEI>\n"))
-    (let ((trusted-content nil))
-      (with-current-buffer (pyxv-test--open "invalid.xml")
-        (should (string-match-p "invalid.xml is not in .trusted-content."
-                                (with-current-buffer "*Messages*"
-                                  (buffer-substring (point-min) (point-max)))))
-        (flymake-start nil t)
-        (should (flymake-disabled-backends))
-        (should (null (flymake-diagnostics)))
-        (should-not (directory-files temporary-file-directory nil "^py-xmlvalidate-"))))))
+    (pyxv-test--write "invalid.xml" pyxv-test--invalid)
+    (let ((trusted-content nil)
+          (py-xmlvalidate--warned (make-hash-table :test #'equal)))
+      (pyxv-test--capturing-warnings warnings
+        (with-current-buffer (pyxv-test--open "invalid.xml")
+          (should (= (length warnings) 1))
+          (should (string-match-p "invalid.xml is not in .trusted-content., so it is not checked as you type" (car warnings)))
+          (should (string-match-p "M-x py-xmlvalidate-trust-file" (car warnings)))
+          (should (string-match-p "(add-to-list 'trusted-content \".*invalid.xml\")" (car warnings)))
+          (flymake-start nil t)
+          (should (flymake-disabled-backends))
+          (should (null (flymake-diagnostics)))
+          ;; the commands explain instead of doing nothing
+          (should (string-match-p "is not in .trusted-content."
+                                  (cadr (should-error (py-xmlvalidate-check) :type 'user-error))))
+          (should-error (py-xmlvalidate-refresh-schema) :type 'user-error)
+          ;; turning the mode on again does not warn again
+          (py-xmlvalidate-mode -1) (py-xmlvalidate-mode 1)
+          (should (= (length warnings) 1))
+          (should-not (directory-files temporary-file-directory nil "^py-xmlvalidate-")))))))
+
+(ert-deftest pyxv-real-trust-file ()
+  "`py-xmlvalidate-trust-file' trusts the file or its folder, and checks."
+  (pyxv-test--with-env
+    (pyxv-test--write "invalid.xml" pyxv-test--invalid)
+    (let ((trusted-content nil)
+          (py-xmlvalidate--warned (make-hash-table :test #'equal))
+          (kill-ring nil))
+      (pyxv-test--capturing-warnings warnings
+        (with-current-buffer (pyxv-test--open "invalid.xml")
+          ;; "quit" changes nothing
+          (cl-letf (((symbol-function 'read-multiple-choice) (lambda (&rest _) '(?q "quit"))))
+            (py-xmlvalidate-trust-file))
+          (should (null trusted-content))
+          ;; "file" trusts only this file, and the check runs
+          (cl-letf (((symbol-function 'read-multiple-choice) (lambda (&rest _) '(?f "file"))))
+            (py-xmlvalidate-trust-file))
+          (should (equal trusted-content (list (abbreviate-file-name buffer-file-truename))))
+          (should (equal (car kill-ring)
+                         (format "(add-to-list 'trusted-content %S)" (car trusted-content))))
+          (pyxv-test--wait (lambda () (and (memq #'py-xmlvalidate-flymake (flymake-reporting-backends))
+                                           (null py-xmlvalidate--run)))
+                           "the check after trusting")
+          (should (equal (pyxv-test--lines (flymake-diagnostics) "Schematron") '(2)))
+          ;; "folder" trusts the folder
+          (setq trusted-content nil)
+          (cl-letf (((symbol-function 'read-multiple-choice) (lambda (&rest _) '(?d "folder"))))
+            (py-xmlvalidate-trust-file))
+          (should (equal trusted-content (list (file-name-directory (abbreviate-file-name buffer-file-truename)))))
+          (should (trusted-content-p))
+          (should (= (length warnings) 1)))))))  ; the one on opening
+
+(ert-deftest pyxv-real-report-untrusted ()
+  "The report runs on an untrusted file, and ends saying live checking is off."
+  (pyxv-test--with-env
+    (pyxv-test--write "invalid.xml" pyxv-test--invalid)
+    (let ((trusted-content nil)
+          (py-xmlvalidate--warned (make-hash-table :test #'equal)))
+      (pyxv-test--capturing-warnings warnings
+        (with-current-buffer (pyxv-test--open "invalid.xml")
+          (py-xmlvalidate-report))
+        (should (= (length warnings) 1)))
+      (let ((report (get-buffer "*py-xmlvalidate report*")))
+        (pyxv-test--wait (lambda () (with-current-buffer report
+                                      (string-match-p "^Note: " (buffer-string))))
+                         "the report's note")
+        (with-current-buffer report
+          (should (string-match-p "at most 2 p, found 3" (buffer-string)))
+          (should (string-match-p "Note: .*invalid.xml is not in .trusted-content." (buffer-string))))
+        (kill-buffer report)))))
 
 (ert-deftest pyxv-real-schema-setting ()
   "`py-xmlvalidate-schema' applies to documents without <?xml-model?>."
@@ -402,6 +477,7 @@
         (with-current-buffer report
           (should (string-match-p "at most 2 p, found 3" (buffer-string)))
           (should (string-match-p "py-xmlvalidate violations found at " (buffer-string)))
+          (should-not (string-match-p "^Note: " (buffer-string)))
           (goto-char (point-min))
           (compilation-next-error 1)
           (compile-goto-error))

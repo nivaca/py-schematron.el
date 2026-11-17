@@ -128,8 +128,18 @@ you trust, and this package follows that rule. A document's
 `<?xml-model?>` chooses the schema, and the schema's rules are XPath that
 Saxon runs: they can read files on your computer and fetch URLs. So an XML
 file from elsewhere is not checked until you put it, or its folder, in
-`trusted-content`. Folder names end in `/`. When a file is not trusted, the
-package says so when you open it.
+`trusted-content`. Folder names end in `/`.
+
+When you open a file that is not trusted, a warning in the `*Warnings*`
+buffer says so, once per file, with the line to add to your init file.
+`M-x py-xmlvalidate-trust-file` trusts it on request: it asks whether to
+trust the file alone or its whole folder, adds it to `trusted-content` for
+the session, starts checking, and puts the line that keeps it in the kill
+ring, ready to paste into your init file. Trust single files rather than
+folders like `~/Downloads/`, where files from elsewhere arrive. Until a
+file is trusted, `py-xmlvalidate-check` and `py-xmlvalidate-refresh-schema`
+say why they cannot run, and `py-xmlvalidate-report` (which runs, since
+you asked for it) ends with the same note.
 
 Then `M-x py-xmlvalidate-check-setup` says whether Python, its libraries,
 the script and jing are in place.
@@ -142,6 +152,7 @@ the script and jing are in place.
 | `py-xmlvalidate-check` | Checks the buffer now |
 | `py-xmlvalidate-refresh-schema` | Downloads the document's remote schema again (after it changed upstream), then checks |
 | `py-xmlvalidate-report` | Full report of the saved file, in a buffer with links to the lines |
+| `py-xmlvalidate-trust-file` | Trusts the file, or its folder, after asking; starts checking it |
 | `py-xmlvalidate-check-setup` | Says whether Python, saxonche, lxml, the script and jing are found |
 | `py-xmlvalidate-show-log` | What `py-xmlvalidate.py` and jing printed (schema detection, downloads, cache) |
 

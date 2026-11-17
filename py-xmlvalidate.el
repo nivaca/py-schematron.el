@@ -4,7 +4,7 @@
 ;; Copyright (C) 2026 Nicolas Vaughan <nicolasvaughan@proton.me>
 
 ;; Author: Nicolas Vaughan <nicolasvaughan@proton.me>
-;; Version: 0.1.1
+;; Version: 0.1.2
 ;; Package-Requires: ((emacs "31.1"))
 ;; Keywords: languages, xml, tools
 ;; URL: https://codeberg.org/nivaca/py-xmlvalidate
@@ -56,6 +56,9 @@
 ;; and fetch URLs.  So list the folders of your own documents there:
 ;;
 ;;   (setopt trusted-content '("~/Dropbox/docs/editions/"))
+;;
+;; A file outside those folders gets a warning when it is opened, and
+;; M-x py-xmlvalidate-trust-file trusts it (or its folder) on request.
 ;;
 ;; M-x py-xmlvalidate-check-setup says whether Python, its libraries and
 ;; jing are where they should be.  See emacs/README.md for the details.
@@ -538,13 +541,80 @@ named in a document can make Saxon read files and fetch URLs."
           (setq-local flymake-no-changes-timeout nil))
         (add-hook 'kill-buffer-hook #'py-xmlvalidate--kill nil t)
         (unless (trusted-content-p)
-          (message "py-xmlvalidate: %s is not in `trusted-content', so it will not be checked; add its folder there to check it"
-                   (if buffer-file-name (abbreviate-file-name buffer-file-name) (buffer-name))))
+          (py-xmlvalidate--warn-untrusted))
         (flymake-mode 1))
     (remove-hook 'flymake-diagnostic-functions #'py-xmlvalidate-flymake t)
     (kill-local-variable 'flymake-no-changes-timeout)
     (py-xmlvalidate--kill)
     (when flymake-mode (flymake-start))))
+
+(defvar py-xmlvalidate--warned (make-hash-table :test #'equal)
+  "Files already warned about as untrusted, in this session.")
+
+(defun py-xmlvalidate--name ()
+  "The visited file's name as `trusted-content' compares it."
+  (and buffer-file-truename (abbreviate-file-name buffer-file-truename)))
+
+(defun py-xmlvalidate--untrusted-text ()
+  "Why the current buffer is not checked, and what to do about it."
+  (if (py-xmlvalidate--name)
+      ;; The Lisp line goes through `format', not `format-message',
+      ;; whose curly quotes would make it wrong to paste.
+      (concat
+       (format-message
+        "%s is not in `trusted-content', so it is not checked as you type.  \
+To check it, run M-x py-xmlvalidate-trust-file, or add to your init file:\n"
+        (py-xmlvalidate--name))
+       (format "  (add-to-list 'trusted-content %S)\n" (py-xmlvalidate--name))
+       "Only trust files you know: the schema a document names is run by \
+Saxon, and its rules can read files and fetch URLs.")
+    (format-message "%s visits no file, and only files in `trusted-content' are checked."
+                    (buffer-name))))
+
+(defun py-xmlvalidate--warn-untrusted ()
+  "Warn, once per file and session, that this buffer is not checked."
+  (let ((key (or (py-xmlvalidate--name) (buffer-name))))
+    (unless (gethash key py-xmlvalidate--warned)
+      (puthash key t py-xmlvalidate--warned)
+      (display-warning 'py-xmlvalidate (py-xmlvalidate--untrusted-text) :warning))))
+
+(defun py-xmlvalidate--require-trust ()
+  "Signal a `user-error' explaining why, if the buffer is not trusted."
+  (unless (trusted-content-p)
+    (user-error "%s" (car (split-string (py-xmlvalidate--untrusted-text) "\n")))))
+
+;;;###autoload
+(defun py-xmlvalidate-trust-file ()
+  "Trust the visited file, or its folder, and start checking it.
+Asks first.  The file or folder is added to `trusted-content' for
+this session; the line that keeps it for future sessions is put
+in the kill ring, to paste into your init file."
+  (interactive)
+  (let ((name (py-xmlvalidate--name)))
+    (unless name
+      (user-error "This buffer visits no file"))
+    (if (trusted-content-p)
+        (message "py-xmlvalidate: %s is already trusted" name)
+      (let* ((folder (file-name-directory name))
+             (choice (car (read-multiple-choice
+                           (format-message
+                            "Trust %s?  Its schema's rules can read files and fetch URLs; trust only files you know"
+                            name)
+                           `((?f "file" ,(format "Trust only %s" name))
+                             (?d "folder" ,(format "Trust every file in %s" folder))
+                             (?q "quit" "Trust nothing"))))))
+        (unless (eq choice ?q)
+          (let* ((entry (if (eq choice ?d) folder name))
+                 (line (format "(add-to-list 'trusted-content %S)" entry)))
+            (unless (eq trusted-content :all)
+              (setq trusted-content (append trusted-content (list entry))))
+            (kill-new line)
+            (dolist (b (buffer-list))
+              (with-current-buffer b
+                (when (and py-xmlvalidate-mode (trusted-content-p))
+                  (flymake-start nil t))))
+            (message "py-xmlvalidate: trusted %s for this session; to keep it, paste into your init file (it is in the kill ring): %s"
+                     entry line)))))))
 
 (defun py-xmlvalidate--ensure-mode ()
   "Turn on `py-xmlvalidate-mode' if it is off."
@@ -555,6 +625,7 @@ named in a document can make Saxon read files and fetch URLs."
   "Check the buffer now."
   (interactive)
   (py-xmlvalidate--ensure-mode)
+  (py-xmlvalidate--require-trust)
   (flymake-start nil t))
 
 ;;;###autoload
@@ -564,6 +635,7 @@ For when the schema has changed upstream: py-xmlvalidate.py keeps
 a downloaded schema in its cache for a day."
   (interactive)
   (py-xmlvalidate--ensure-mode)
+  (py-xmlvalidate--require-trust)
   (setq py-xmlvalidate--refresh t)
   (message "py-xmlvalidate: refreshing the schema...")
   (flymake-start nil t))
@@ -572,7 +644,9 @@ a downloaded schema in its cache for a day."
 (defun py-xmlvalidate-report ()
   "Show the full report of the visited file, with clickable lines.
 Runs py-xmlvalidate.py -v on the saved file, in a compilation
-buffer; each detailed problem links to its line."
+buffer; each detailed problem links to its line.  It runs even
+when the file is not in `trusted-content', since you asked for
+it; the report then ends with a note that live checking is off."
   (interactive)
   (unless buffer-file-name
     (user-error "The buffer is not visiting a file"))
@@ -580,6 +654,7 @@ buffer; each detailed problem links to its line."
              (y-or-n-p "Save the buffer first? "))
     (save-buffer))
   (let* ((file buffer-file-name)
+         (untrusted (and (not (trusted-content-p)) (py-xmlvalidate--untrusted-text)))
          (default-directory (file-name-directory file))
          (args (append (and py-xmlvalidate-schema
                             (list (pcase py-xmlvalidate-schema-type
@@ -596,15 +671,30 @@ buffer; each detailed problem links to its line."
                     " ")
          #'py-xmlvalidate-report-mode
          (lambda (_mode) "*py-xmlvalidate report*"))
-      (setq-local py-xmlvalidate--report-file file))))
+      (setq-local py-xmlvalidate--report-file file)
+      (setq-local py-xmlvalidate--report-untrusted untrusted))))
 
 (defvar-local py-xmlvalidate--report-file nil
   "The file a report buffer is about.")
 (put 'py-xmlvalidate--report-file 'permanent-local t)
 
+(defvar-local py-xmlvalidate--report-untrusted nil
+  "When the file is not trusted, the note that ends the report.")
+(put 'py-xmlvalidate--report-untrusted 'permanent-local t)
+
+(defun py-xmlvalidate--report-note (buffer _how)
+  "End the report in BUFFER with the note about trust, if any."
+  (with-current-buffer buffer
+    (when py-xmlvalidate--report-untrusted
+      (let ((inhibit-read-only t))
+        (save-excursion
+          (goto-char (point-max))
+          (insert "\nNote: " py-xmlvalidate--report-untrusted "\n"))))))
+
 (define-compilation-mode py-xmlvalidate-report-mode "py-xmlvalidate"
   "Mode of the buffer of \\[py-xmlvalidate-report]."
   (setq-local compilation-exit-message-function #'py-xmlvalidate--report-exit)
+  (add-hook 'compilation-finish-functions #'py-xmlvalidate--report-note nil t)
   (setq-local compilation-error-regexp-alist '(py-xmlvalidate))
   (setq-local compilation-error-regexp-alist-alist
               '((py-xmlvalidate
