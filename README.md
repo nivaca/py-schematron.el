@@ -190,7 +190,8 @@ How quickly the problems appear is Flymake's
 
 Starting the check costs little (Python with its libraries loads in about
 15 ms); the time goes into the rules. A small document is checked in a
-tenth of a second; a 26,000-line edition, in about 3.5 s. While a check
+tenth of a second; a 26,000-line edition, in about two seconds (with
+py-xmlvalidate.py 1.16, which comes with the package). While a check
 runs, Flymake's mode-line indicator says so, and typing again cancels it
 and starts a new one, so nothing piles up. For very large files you may
 prefer `py-xmlvalidate-live-max-size`.
