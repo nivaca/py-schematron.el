@@ -2,22 +2,25 @@
 
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 ;; Copyright (C) 2026 Nicolas Vaughan <nicolasvaughan@proton.me>
-;; This file is part of py-xmlvalidate.  See the LICENSE file for details.
+;; This file is part of py-xmlvalidate-emacs.  See the LICENSE file for details.
 
 ;;; Commentary:
 
 ;; Run from the repository's top folder:
 ;;
 ;;   PYXV_PYTHON=~/.venvs/schematron/bin/python JING=jing \
-;;     emacs --batch -Q -L emacs -l emacs/test/py-xmlvalidate-tests.el \
+;;     FLYCHECK_DIR=~/.emacs.d/straight/build/flycheck PYXV_TRANG=trang \
+;;     emacs --batch -Q -L . -l test/py-xmlvalidate-tests.el \
 ;;     -f ert-run-tests-batch-and-exit
 ;;
 ;; The first group of tests reads the programs' output and needs nothing
 ;; else.  The second runs the real py-xmlvalidate.py (and jing, when JING
 ;; is set) through Flymake, on documents written to a temporary folder;
 ;; those tests are skipped unless PYXV_PYTHON names a Python with
-;; saxonche and lxml.  The script is copied there too, so its download
-;; cache stays out of the repository.
+;; saxonche and lxml.  The package's py-xmlvalidate.py is copied there
+;; too, so its download cache stays out of the repository.  The
+;; Flycheck tests need FLYCHECK_DIR (a folder with flycheck.el), and the
+;; nxml ones PYXV_TRANG (trang's command line).
 
 ;;; Code:
 
@@ -33,8 +36,8 @@
 (require 'py-xmlvalidate)
 
 (defconst pyxv-test--repo
-  (expand-file-name "../.." (file-name-directory (or load-file-name buffer-file-name)))
-  "The repository's top folder.")
+  (expand-file-name ".." (file-name-directory (or load-file-name buffer-file-name)))
+  "The repository's top folder, with py-xmlvalidate.el and py-xmlvalidate.py.")
 
 
 ;;;; Reading the output
@@ -104,27 +107,36 @@
 
 
 (ert-deftest pyxv-script-lookup ()
-  "The script is found above this file, and through a Straight-style link."
+  "The script is found next to this file, through a Straight-style link,
+and in the folder above (the layout before 0.3.0)."
   (let* ((root (make-temp-file "pyxv-lookup-" t))
          (clone (expand-file-name "repos/pkg/" root))
-         (build (expand-file-name "build/pkg/" root)))
+         (build (expand-file-name "build/pkg/" root))
+         (old (expand-file-name "old/" root)))
     (unwind-protect
         (progn
-          (make-directory (expand-file-name "emacs" clone) t)
+          (make-directory clone t)
           (make-directory build t)
+          (make-directory (expand-file-name "emacs" old) t)
           (with-temp-file (expand-file-name "py-xmlvalidate.py" clone))
-          (with-temp-file (expand-file-name "emacs/py-xmlvalidate.el" clone))
-          (make-symbolic-link (expand-file-name "emacs/py-xmlvalidate.el" clone)
+          (with-temp-file (expand-file-name "py-xmlvalidate.el" clone))
+          (make-symbolic-link (expand-file-name "py-xmlvalidate.el" clone)
                               (expand-file-name "py-xmlvalidate.el" build))
+          (with-temp-file (expand-file-name "py-xmlvalidate.py" old))
+          (with-temp-file (expand-file-name "emacs/py-xmlvalidate.el" old))
           (let ((py-xmlvalidate-script nil))
-            ;; package-vc, a clone: the folder above
-            (let ((py-xmlvalidate--directory (expand-file-name "emacs/" clone)))
+            ;; package-vc, a clone: next to the file
+            (let ((py-xmlvalidate--directory clone))
               (should (equal (py-xmlvalidate--script)
                              (expand-file-name "py-xmlvalidate.py" clone))))
             ;; Straight: the build folder, where the .el is a link
             (let ((py-xmlvalidate--directory build))
               (should (equal (file-truename (py-xmlvalidate--script))
                              (file-truename (expand-file-name "py-xmlvalidate.py" clone)))))
+            ;; the old layout: the folder above
+            (let ((py-xmlvalidate--directory (expand-file-name "emacs/" old)))
+              (should (equal (py-xmlvalidate--script)
+                             (expand-file-name "py-xmlvalidate.py" old))))
             ;; the setting wins
             (let ((py-xmlvalidate-script "~/x.py"))
               (should (equal (py-xmlvalidate--script) (expand-file-name "~/x.py"))))))

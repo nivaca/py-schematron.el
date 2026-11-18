@@ -2,7 +2,9 @@
 
 Checks XML documents, TEI editions in particular, against the Schematron
 rules of their schema, with `py-xmlvalidate.py`, the program of
-[py-xmlvalidate](https://codeberg.org/nivaca/py-xmlvalidate), and shows the
+[py-xmlvalidate](https://codeberg.org/nivaca/py-xmlvalidate) (the package
+carries its own copy; see [The copy of
+py-xmlvalidate.py](#the-copy-of-py-xmlvalidatepy)), and shows the
 problems with Flycheck when it is installed, or with Flymake, which comes
 with Emacs. When the schema is a RelaxNG file, it also checks the structure
 with jing, and gives the schema to nxml-mode, so that completion offers what
@@ -51,9 +53,9 @@ Emacs does not install them for you.
    `sudo apt install jing`, or <https://relaxng.org/jclark/jing.html>.
    Without it, only the Schematron rules are checked.
 
-4. **trang** (optional) to give nxml the schema; it needs Java. From the
+4. **trang** (optional) to give nxml the schema; it needs Java. From this
    repository's folder (Straight's clone is in
-   `~/.emacs.d/straight/repos/py-xmlvalidate`),
+   `~/.emacs.d/straight/repos/py-xmlvalidate-emacs`),
 
    ```sh
    python3 tools/install-trang.py
@@ -71,7 +73,7 @@ Emacs does not install them for you.
 ## Installation
 
 Any of these installs the package from Codeberg (or GitHub, with its URL).
-Each clones the whole repository, and the package uses that clone's own
+Each clones this repository, which includes the package's copy of
 `py-xmlvalidate.py`, so updating the package updates the script too.
 
 ### With package-vc (built into Emacs)
@@ -80,24 +82,21 @@ In your init file:
 
 ```elisp
 (package-vc-install
- '(py-xmlvalidate :url "https://codeberg.org/nivaca/py-xmlvalidate"
-                  :lisp-dir "emacs"))
+ '(py-xmlvalidate :url "https://codeberg.org/nivaca/py-xmlvalidate-emacs"))
 ```
 
 or, with `use-package`:
 
 ```elisp
 (use-package py-xmlvalidate
-  :vc (:url "https://codeberg.org/nivaca/py-xmlvalidate" :lisp-dir "emacs"
-       :rev :newest)
+  :vc (:url "https://codeberg.org/nivaca/py-xmlvalidate-emacs")
   :hook (nxml-mode . py-xmlvalidate-mode)
   :custom
   (py-xmlvalidate-python "~/.venvs/schematron/bin/python"))
 ```
 
-(`:rev :newest` follows the latest commit, as `package-vc-install` does;
-with use-package's default, the last release, Emacs 31.1.90 fails to find
-the package's main file.) `M-x package-vc-upgrade` updates the package.
+use-package installs the latest release; `package-vc-install`, the latest
+commit. `M-x package-vc-upgrade` updates the package.
 
 ### With Straight
 
@@ -105,8 +104,7 @@ With `use-package`:
 
 ```elisp
 (use-package py-xmlvalidate
-  :straight (:host codeberg :repo "nivaca/py-xmlvalidate"
-             :files ("emacs/*.el"))
+  :straight (:host codeberg :repo "nivaca/py-xmlvalidate-emacs")
   :hook (nxml-mode . py-xmlvalidate-mode)
   :custom
   (py-xmlvalidate-python "~/.venvs/schematron/bin/python"))
@@ -116,24 +114,30 @@ or without it:
 
 ```elisp
 (straight-use-package
- '(py-xmlvalidate :host codeberg :repo "nivaca/py-xmlvalidate"
-                  :files ("emacs/*.el")))
+ '(py-xmlvalidate :host codeberg :repo "nivaca/py-xmlvalidate-emacs"))
 (add-hook 'nxml-mode-hook #'py-xmlvalidate-mode)
 ```
 
-`:files` is needed because the Lisp file is in `emacs/`, not at the top
-of the repository; it leaves the tests (`emacs/test/`) out of the build.
-Straight builds the package from links to its clone, and the package
-follows the link back to the clone to find `py-xmlvalidate.py` (this
-needs version 0.1.1 or later). `M-x straight-pull-package RET
-py-xmlvalidate` updates it. From GitHub, use `:host github`.
+Straight builds the package from links to its clone (the tests in `test/`
+are left out), and the package follows the link back to the clone to find
+its `py-xmlvalidate.py`. `M-x straight-pull-package RET py-xmlvalidate`
+updates it. From GitHub, use `:host github`.
+
+### Moving from the py-xmlvalidate repository
+
+Until version 0.2.0 the package lived in the `emacs/` folder of
+[py-xmlvalidate](https://codeberg.org/nivaca/py-xmlvalidate), and was
+installed from there (with `:lisp-dir "emacs"` or `:files ("emacs/*.el")`).
+That folder is gone; change the recipe to the ones above, which name this
+repository and need neither. With Straight, the old clone,
+`~/.emacs.d/straight/repos/py-xmlvalidate`, can then be deleted.
 
 ### From a clone
 
 If you already have a clone of the repository:
 
 ```elisp
-(add-to-list 'load-path "/path/to/py-xmlvalidate/emacs")
+(add-to-list 'load-path "/path/to/py-xmlvalidate-emacs")
 (require 'py-xmlvalidate)
 ```
 
@@ -246,7 +250,7 @@ The settings:
 | Variable | Default | Meaning |
 |---|---|---|
 | `py-xmlvalidate-python` | `"python3"` | Python with saxonche and lxml; may start with `~` |
-| `py-xmlvalidate-script` | `nil` | `py-xmlvalidate.py` to run; `nil` is the repository's copy |
+| `py-xmlvalidate-script` | `nil` | `py-xmlvalidate.py` to run; `nil` is the package's own copy |
 | `py-xmlvalidate-schema` | `nil` | Schema to use instead of the `<?xml-model?>`; relative to the document |
 | `py-xmlvalidate-schema-type` | `rng` | Its type: `rng`, `sch` or `odd` |
 | `py-xmlvalidate-relaxng` | `t` | Also check the structure with jing, when the schema is RelaxNG |
@@ -275,22 +279,56 @@ default).
 Starting the check costs little (Python with its libraries loads in about
 15 ms); the time goes into the rules. A small document is checked in a
 tenth of a second; a 26,000-line edition, in about two seconds (with
-py-xmlvalidate.py 1.16, which comes with the package). While a check
+py-xmlvalidate.py 1.16 or later; the package carries 1.17). While a check
 runs, Flymake's mode-line indicator says so, and typing again cancels it
 and starts a new one, so nothing piles up. For very large files you may
 prefer `py-xmlvalidate-live-max-size`.
 
+## The copy of py-xmlvalidate.py
+
+The package carries its own copy of `py-xmlvalidate.py`, next to
+`py-xmlvalidate.el`, so that installing the package is all that is needed.
+The program itself is developed in
+[py-xmlvalidate](https://codeberg.org/nivaca/py-xmlvalidate), whose
+`tools/sync-plugins.py` copies each new version here; a release of this
+package says which version of the program it carries
+([CHANGELOG.md](CHANGELOG.md)). To use another copy, for example a clone
+of py-xmlvalidate, set `py-xmlvalidate-script` to its `py-xmlvalidate.py`.
+
 ## Tests
 
-From the repository's top folder:
+From this repository's top folder:
 
 ```sh
 PYXV_PYTHON=~/.venvs/schematron/bin/python JING=jing \
   FLYCHECK_DIR=~/.emacs.d/straight/build/flycheck PYXV_TRANG=trang \
-  emacs --batch -Q -L emacs -l emacs/test/py-xmlvalidate-tests.el \
+  emacs --batch -Q -L . -l test/py-xmlvalidate-tests.el \
   -f ert-run-tests-batch-and-exit
 ```
 
 Without `PYXV_PYTHON`, only the tests that read the programs' output run;
 without `FLYCHECK_DIR` (a folder with `flycheck.el`), the Flycheck tests are
 skipped, and without `PYXV_TRANG` (trang's command line), the nxml ones.
+
+## Releases
+
+`python3 tools/bundle-zip.py` makes `dist/py-xmlvalidate-emacs-v.VERSION.zip`
+(the version in `py-xmlvalidate.el`) from the files git tracks. Each
+release, on [Codeberg](https://codeberg.org/nivaca/py-xmlvalidate-emacs/releases)
+and [GitHub](https://github.com/nivaca/py-xmlvalidate-emacs/releases), is
+tagged `vVERSION` and has that zip attached; [CHANGELOG.md](CHANGELOG.md)
+lists them.
+
+## License
+
+Copyright (C) 2026 Nicolas Vaughan <nicolasvaughan@proton.me>
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the [GNU General Public License](LICENSE) for more
+details.

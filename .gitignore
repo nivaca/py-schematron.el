@@ -1,0 +1,9 @@
+# byte-compiled files and the autoloads that package managers generate
+*.elc
+*-autoloads.el
+# py-xmlvalidate.py's download cache and Python's
+.schema-cache/
+*.harvested.sch
+__pycache__/
+# release bundles (tools/bundle-zip.py)
+dist/

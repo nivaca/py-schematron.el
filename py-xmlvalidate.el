@@ -1,15 +1,16 @@
-;;; py-xmlvalidate.el --- Schematron validation of XML/TEI with Flymake  -*- lexical-binding: t; -*-
+;;; py-xmlvalidate.el --- Schematron validation of XML/TEI with Flycheck or Flymake  -*- lexical-binding: t; -*-
 
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 ;; Copyright (C) 2026 Nicolas Vaughan <nicolasvaughan@proton.me>
 
 ;; Author: Nicolas Vaughan <nicolasvaughan@proton.me>
-;; Version: 0.2.0
+;; Version: 0.3.0
 ;; Package-Requires: ((emacs "31.1"))
 ;; Keywords: languages, xml, tools
-;; URL: https://codeberg.org/nivaca/py-xmlvalidate
+;; URL: https://codeberg.org/nivaca/py-xmlvalidate-emacs
 
-;; This file is part of py-xmlvalidate.
+;; This file is part of py-xmlvalidate-emacs, the Emacs package of
+;; py-xmlvalidate (https://codeberg.org/nivaca/py-xmlvalidate).
 
 ;; py-xmlvalidate is free software: you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -28,7 +29,8 @@
 
 ;; A Flymake backend and a Flycheck checker that check XML documents,
 ;; TEI editions in particular, against the Schematron rules of their
-;; schema, with the program py-xmlvalidate.py of this same repository.
+;; schema, with the program py-xmlvalidate.py, of which this package
+;; carries its own copy.
 ;; When the schema is a RelaxNG file, the structure is also checked with
 ;; jing.  Flycheck is used when it is installed, Flymake otherwise (see
 ;; `py-xmlvalidate-frontend').
@@ -70,7 +72,7 @@
 ;; M-x py-xmlvalidate-trust-file trusts it (or its folder) on request.
 ;;
 ;; M-x py-xmlvalidate-check-setup says whether Python, its libraries and
-;; jing are where they should be.  See emacs/README.md for the details.
+;; jing are where they should be.  See README.md for the details.
 
 ;;; Code:
 
@@ -83,12 +85,12 @@
 (defgroup py-xmlvalidate nil
   "Schematron validation of XML/TEI documents with py-xmlvalidate.py."
   :group 'tools
-  :link '(url-link "https://codeberg.org/nivaca/py-xmlvalidate")
+  :link '(url-link "https://codeberg.org/nivaca/py-xmlvalidate-emacs")
   :prefix "py-xmlvalidate-")
 
 (defconst py-xmlvalidate--directory
   (file-name-directory (or load-file-name buffer-file-name default-directory))
-  "Folder of this file: the emacs/ folder of the repository.")
+  "Folder of this file, where the package's py-xmlvalidate.py also is.")
 
 (defcustom py-xmlvalidate-python "python3"
   "Python interpreter that has the saxonche and lxml libraries.
@@ -98,11 +100,11 @@ later is needed."
 
 (defcustom py-xmlvalidate-script nil
   "Path to py-xmlvalidate.py.
-When nil, the copy in the repository this package was installed
-from is used: it is looked for next to this file and in the
-folder above, also after following symbolic links, which is how
-it is found when Straight builds the package from links."
-  :type '(choice (const :tag "The repository's copy" nil) file))
+When nil, the package's own copy is used: it is looked for next
+to this file, also after following the symbolic link to this file,
+which is how it is found when Straight builds the package from
+links (and, for older layouts, in the folder above)."
+  :type '(choice (const :tag "The package's own copy" nil) file))
 
 (defcustom py-xmlvalidate-schema nil
   "Schema to validate against, instead of the document's <?xml-model?>.
@@ -337,19 +339,20 @@ it is a file name, and may start with \"~\"."
     (executable-find name)))
 
 (defun py-xmlvalidate--script-candidates ()
-  "Where the repository's py-xmlvalidate.py may be, most likely first.
-package-vc and a plain clone keep this file in the repository's
-emacs/ folder, so the script is in the folder above.  Straight
+  "Where the package's py-xmlvalidate.py may be, most likely first.
+package-vc and a plain clone keep it next to this file.  Straight
 builds the package in a folder of its own, from links to the
 files of its clone; following the link to this file leads back
-to the clone."
+to the clone.  The folder above is looked at last, as in the
+layout of py-xmlvalidate before 0.3.0, when this file was in its
+emacs/ folder."
   (let* ((dir py-xmlvalidate--directory)
          (real (file-name-directory
                 (file-truename (expand-file-name "py-xmlvalidate.el" dir)))))
     (delete-dups
      (mapcar (lambda (d) (expand-file-name "py-xmlvalidate.py" d))
-             (list (expand-file-name ".." dir) dir
-                   (expand-file-name ".." real) real)))))
+             (list dir real
+                   (expand-file-name ".." dir) (expand-file-name ".." real))))))
 
 (defun py-xmlvalidate--script ()
   "The py-xmlvalidate.py to run."
