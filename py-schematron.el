@@ -4,7 +4,7 @@
 ;; Copyright (C) 2026 Nicolas Vaughan <nicolasvaughan@proton.me>
 
 ;; Author: Nicolas Vaughan <nicolasvaughan@proton.me>
-;; Version: 0.9.1
+;; Version: 0.9.2
 ;; Package-Requires: ((emacs "31.1"))
 ;; Keywords: languages, xml, tools
 ;; URL: https://codeberg.org/nivaca/py-schematron.el
@@ -477,7 +477,11 @@ started), stdout and stderr.  NAME names the process."
         (funcall callback nil "" "")
      (condition-case e
         (let ((proc
-               (make-process
+               ;; py-schematron.py writes UTF-8 (Python 3.15 and later do),
+               ;; whatever the system's code page, as on Windows
+               (let ((coding-system-for-read 'utf-8-unix)
+                     (coding-system-for-write 'utf-8-unix))
+                (make-process
                 :name name :buffer out :stderr err
                 :command (cons program args)
                 :connection-type 'pipe :noquery t
@@ -495,7 +499,7 @@ started), stdout and stderr.  NAME names the process."
                         (with-current-buffer source
                           (funcall callback
                                    (and (eq (process-status p) 'exit) (process-exit-status p))
-                                   stdout stderr)))))))))
+                                   stdout stderr))))))))))
           (plist-put run :procs (cons proc (plist-get run :procs))))
       (file-error
        (funcall callback nil "" (error-message-string e)))))))
@@ -1296,15 +1300,16 @@ it; the report then ends with a note that live checking is off."
                                   (expand-file-name py-schematron-schema)))
                        (list "-v" file))))
     (with-current-buffer
-        (compilation-start
-         (mapconcat #'shell-quote-argument
-                    (append (list (or (py-schematron--program (py-schematron--python))
-                                      (py-schematron--python))
-                                  (py-schematron--script))
-                            args)
-                    " ")
-         #'py-schematron-report-mode
-         (lambda (_mode) "*py-schematron report*"))
+        (let ((coding-system-for-read 'utf-8-unix))      ; (see `py-schematron--start')
+          (compilation-start
+           (mapconcat #'shell-quote-argument
+                      (append (list (or (py-schematron--program (py-schematron--python))
+                                        (py-schematron--python))
+                                    (py-schematron--script))
+                              args)
+                      " ")
+           #'py-schematron-report-mode
+           (lambda (_mode) "*py-schematron report*")))
       (setq-local py-schematron--report-file file)
       (setq-local py-schematron--report-untrusted untrusted))))
 
@@ -1369,8 +1374,9 @@ Also says which checker, Flycheck or Flymake, is used."
           (say nil (format "Python: \"%s\" not found.  Run py-schematron's installer, or set `py-schematron-python'."
                            (py-schematron--python)))
         (let ((probe (with-temp-buffer
-                       (cons (call-process python nil t nil "-c"
-                                           "import sys; print(sys.version.split()[0]); import saxonche, lxml")
+                       (cons (let ((coding-system-for-read 'utf-8-unix))
+                               (call-process python nil t nil "-c"
+                                           "import sys; print(sys.version.split()[0]); import saxonche, lxml"))
                              (string-trim (buffer-string))))))
           (say (eq (car probe) 0)
                (if (eq (car probe) 0)
@@ -1451,7 +1457,8 @@ Below, what the package's py-schematron.py says of itself (its
            ((not (file-readable-p script))
             (format "(py-schematron.py was not found: %s)" script))
            (t (with-temp-buffer
-                (let ((code (call-process python nil t nil script "--about")))
+                (let ((code (let ((coding-system-for-read 'utf-8-unix))
+                              (call-process python nil t nil script "--about"))))
                   (if (eq code 0)
                       (string-trim (buffer-string))
                     (format "(%s --about failed: %s)" script

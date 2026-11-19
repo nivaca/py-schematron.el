@@ -8,6 +8,18 @@ zip files, are on
 [py-schematron](https://codeberg.org/nivaca/py-schematron/releases), as
 `emacs-vVERSION`.
 
+## 0.9.2 — 2026-11-19 (py-schematron.py 2.2)
+
+- **Accented letters on Windows.** The package read the program's output
+  with the system's code page, which on Windows is not UTF-8, so every
+  accented letter in the messages, the rules' own included, came out
+  garbled ("no estÃ¡ bien formado"). It now reads it as UTF-8, which is
+  what py-schematron.py writes, in the checks, the report and the About
+  and setup buffers.
+- The tests pass on Windows and macOS too: GNU's own Windows build of
+  Emacs is used there, a test's small web server talks through a pipe,
+  and the test folders are deleted the way Windows allows.
+
 ## 0.9.1 — 2026-11-19 (py-schematron.py 2.2)
 
 - **The former names will go in 1.0.** The `py-xmlvalidate-…` options and

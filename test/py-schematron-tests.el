@@ -185,6 +185,22 @@ and in the folder above (the layout before 0.3.0)."
     (with-temp-file f (insert text))
     f))
 
+(defun pysch-test--delete-directory (dir)
+  "Delete DIR and what is in it.
+Windows refuses to delete a folder that a process that just ended, or
+a file just closed, still holds for a moment: there, try again for a
+few seconds, and in the end leave the folder in the temporary one."
+  (let ((tries (if (eq system-type 'windows-nt) 40 1)))
+    (while (and (> tries 0) (file-exists-p dir))
+      (condition-case err
+          (delete-directory dir t)
+        (file-error
+         (setq tries (1- tries))
+         (if (> tries 0)
+             (accept-process-output nil 0.1)
+           (unless (eq system-type 'windows-nt)
+             (signal (car err) (cdr err)))))))))
+
 (defmacro pysch-test--with-env (&rest body)
   "Run BODY with a fresh test folder, the script copied into it."
   (declare (indent 0))
@@ -218,7 +234,7 @@ and in the folder above (the layout before 0.3.0)."
                       (string-prefix-p pysch-test--dir (buffer-file-name b)))
              (with-current-buffer b (set-buffer-modified-p nil))
              (kill-buffer b)))
-         (delete-directory pysch-test--dir t)))))
+         (pysch-test--delete-directory pysch-test--dir)))))
 
 (defun pysch-test--wait (pred what &optional secs)
   "Wait until PRED returns non-nil, at most SECS seconds.
@@ -298,6 +314,21 @@ returns one (called only on time-out)."
                                                       (flymake-diagnostic-text d)))
                           ds))
         (pysch-test--visible ds)))))
+
+(ert-deftest pysch-real-utf-8 ()
+  "The program's output is read as UTF-8, whatever the system's code page.
+As on Windows, where the default for processes is not UTF-8: here, Latin-1."
+  (pysch-test--with-env
+    (pysch-test--write "typo.xml" (concat pysch-test--pi "\n<TEI xmlns=\"http://www.tei-c.org/ns/1.0\">\n<p>a <notde>x\n</p>\n</TEI>\n"))
+    (let ((default-process-coding-system '(latin-1-dos . latin-1-unix))
+          (process-coding-system-alist nil))
+      (with-current-buffer (pysch-test--open "typo.xml")
+        (let ((ds (pysch-test--check)))
+          (should (seq-some (lambda (d) (string-match-p "no está bien formado"
+                                                        (flymake-diagnostic-text d)))
+                            ds))
+          (should-not (seq-some (lambda (d) (string-match-p "Ã" (flymake-diagnostic-text d)))
+                                ds)))))))
 
 (ert-deftest pysch-real-unsaved ()
   "Unsaved changes are checked; the file is not touched."
@@ -885,10 +916,15 @@ Flymake's own warnings are left out."
      ;; \p{P} used three times, in different patterns (translations are cached)
      (princ (format "P=%S\n" (list (and (probe "\\p{P}" "#") t) (and (probe "[\\p{P}]" "#") t)
                                    (and (probe "(\\p{P})" "#") t))))
-     (princ (format "L=%S\n" (mapcar (lambda (c) (and (probe "\\p{L}+" c) t)) '("ꝑ" "𝔄" "中"))))
-     (princ (format "dot=%S\n" (and (probe "." "𝔄") t)))
-     (princ (format "tei=%S\n" (list (and (probe "[^\\p{C}\\p{Z}]+" "ꝑ#U2") t)
-                                     (and (probe "(\\p{L}|\\p{N}|\\p{P}|\\p{S})+" "ꝑ⸗#U2") t))))
+     ;; (the characters by their code points: the command line of the new
+     ;; Emacs is decoded with Windows's code page there)
+     (princ (format "L=%S\n" (mapcar (lambda (c) (and (probe "\\p{L}+" (string c)) t))
+                                     '(#xA751 #x1D504 #x4E2D))))
+     (princ (format "dot=%S\n" (and (probe "." (string #x1D504)) t)))
+     (princ (format "tei=%S\n" (list (and (probe "[^\\p{C}\\p{Z}]+" (concat (string #xA751) "#U2")) t)
+                                     (and (probe "(\\p{L}|\\p{N}|\\p{P}|\\p{S})+"
+                                                 (concat (string #xA751 #x2E17) "#U2"))
+                                          t))))
      (princ (format "token=%S\n"
                     (and (rng-dt-make-value
                           (cdr (rng-xsd-compile 'token '((pattern . "(\\p{L}|\\p{N}|\\p{P}|\\p{S})+"))))
