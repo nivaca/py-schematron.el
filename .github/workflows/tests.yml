@@ -86,7 +86,7 @@ jobs:
           git clone -q --depth 1 https://github.com/purcell/package-lint.git "$RUNNER_TEMP/package-lint"
           emacs --batch -Q -L "$RUNNER_TEMP/package-lint" --eval "(require 'package-lint)" \
             --eval '(setq package-lint-main-file "py-schematron.el")' \
-            -f package-lint-batch-and-exit py-schematron.el py-xmlvalidate.el
+            -f package-lint-batch-and-exit py-schematron.el
 
       - name: Byte-compile
         run: |

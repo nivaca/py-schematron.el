@@ -599,16 +599,14 @@ Flymake's own warnings are left out."
               (should (equal (py-schematron--jing-command) (list java "-jar" jar))))))
       (delete-directory dir t))))
 
-(ert-deftest pysch-obsolete-names ()
-  "The package's names until 0.7.0 still work, as obsolete aliases."
+(ert-deftest pysch-former-names-gone ()
+  "1.0 removed the names of the package until 0.7.0 (py-xmlvalidate)."
   (let ((out (pysch-test--fresh-emacs
-              '(setq py-xmlvalidate-python "/opt/py")
-              '(require 'py-xmlvalidate)
-              '(princ (format "%S %S %S %S" py-schematron-python
-                              (fboundp 'py-xmlvalidate-mode)
-                              (fboundp 'py-xmlvalidate-goto-rule)
-                              (featurep 'py-schematron))))))
-    (should (string-search "\"/opt/py\" t t t" out))))
+              '(require 'py-schematron)
+              '(princ (format "%S %S %S" (fboundp 'py-xmlvalidate-mode)
+                              (boundp 'py-xmlvalidate-python)
+                              (locate-library "py-xmlvalidate"))))))
+    (should (string-search "nil nil nil" out))))
 
 (ert-deftest pysch-real-refresh ()
   "Refresh: a changed remote schema is downloaded again and applied."

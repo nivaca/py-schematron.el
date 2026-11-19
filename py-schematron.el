@@ -4,7 +4,7 @@
 ;; Copyright (C) 2026 Nicolas Vaughan <nicolasvaughan@proton.me>
 
 ;; Author: Nicolas Vaughan <nicolasvaughan@proton.me>
-;; Version: 0.11.0
+;; Version: 1.0.0
 ;; Package-Requires: ((emacs "31.1"))
 ;; Keywords: languages, xml, tools
 ;; URL: https://codeberg.org/nivaca/py-schematron.el
@@ -85,23 +85,6 @@
 (require 'xref)
 (require 'subr-x)
 (require 'lisp-mnt)
-
-;; The package was py-xmlvalidate until 0.7.0: its options keep working
-;; under their former names until 1.0, which will remove these aliases
-;; and py-xmlvalidate.el.
-(define-obsolete-variable-alias 'py-xmlvalidate-fix-nxml 'py-schematron-fix-nxml "0.8.0")
-(define-obsolete-variable-alias 'py-xmlvalidate-frontend 'py-schematron-frontend "0.8.0")
-(define-obsolete-variable-alias 'py-xmlvalidate-jing 'py-schematron-jing "0.8.0")
-(define-obsolete-variable-alias 'py-xmlvalidate-live-max-size 'py-schematron-live-max-size "0.8.0")
-(define-obsolete-variable-alias 'py-xmlvalidate-nxml-schema 'py-schematron-nxml-schema "0.8.0")
-(define-obsolete-variable-alias 'py-xmlvalidate-python 'py-schematron-python "0.8.0")
-(define-obsolete-variable-alias 'py-xmlvalidate-relaxng 'py-schematron-relaxng "0.8.0")
-(define-obsolete-variable-alias 'py-xmlvalidate-schema 'py-schematron-schema "0.8.0")
-(define-obsolete-variable-alias 'py-xmlvalidate-schema-type 'py-schematron-schema-type "0.8.0")
-(define-obsolete-variable-alias 'py-xmlvalidate-script 'py-schematron-script "0.8.0")
-(define-obsolete-variable-alias 'py-xmlvalidate-timeout 'py-schematron-timeout "0.8.0")
-(define-obsolete-variable-alias 'py-xmlvalidate-trang 'py-schematron-trang "0.8.0")
-(define-obsolete-variable-alias 'py-xmlvalidate-mode 'py-schematron-mode "0.8.0")
 
 (defgroup py-schematron nil
   "Schematron validation of XML/TEI documents with py-schematron.py."
@@ -1542,31 +1525,6 @@ Below, what the package's py-schematron.py says of itself (its
         (goto-char (point-min))
         (special-mode))
       (display-buffer (current-buffer)))))
-
-;; The commands' former names (until 0.7.0, when the package was
-;; py-xmlvalidate).
-;;;###autoload
-(define-obsolete-function-alias 'py-xmlvalidate-mode #'py-schematron-mode "0.8.0")
-;;;###autoload
-(define-obsolete-function-alias 'py-xmlvalidate-about #'py-schematron-about "0.8.0")
-;;;###autoload
-(define-obsolete-function-alias 'py-xmlvalidate-check #'py-schematron-check "0.8.0")
-;;;###autoload
-(define-obsolete-function-alias 'py-xmlvalidate-check-setup #'py-schematron-check-setup "0.8.0")
-;;;###autoload
-(define-obsolete-function-alias 'py-xmlvalidate-flymake #'py-schematron-flymake "0.8.0")
-;;;###autoload
-(define-obsolete-function-alias 'py-xmlvalidate-goto-rule #'py-schematron-goto-rule "0.8.0")
-;;;###autoload
-(define-obsolete-function-alias 'py-xmlvalidate-recreate-nxml-schema #'py-schematron-recreate-nxml-schema "0.8.0")
-;;;###autoload
-(define-obsolete-function-alias 'py-xmlvalidate-refresh-schema #'py-schematron-refresh-schema "0.8.0")
-;;;###autoload
-(define-obsolete-function-alias 'py-xmlvalidate-report #'py-schematron-report "0.8.0")
-;;;###autoload
-(define-obsolete-function-alias 'py-xmlvalidate-show-log #'py-schematron-show-log "0.8.0")
-;;;###autoload
-(define-obsolete-function-alias 'py-xmlvalidate-trust-file #'py-schematron-trust-file "0.8.0")
 
 (provide 'py-schematron)
 ;;; py-schematron.el ends here

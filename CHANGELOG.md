@@ -8,6 +8,15 @@ zip files, are on
 [py-schematron](https://codeberg.org/nivaca/py-schematron/releases), as
 `emacs-vVERSION`.
 
+## 1.0.0 — 2026-11-19 (py-schematron.py 2.6)
+
+- **The former names are gone**, as announced in 0.8.0: the
+  `py-xmlvalidate-…` options and commands, obsolete aliases since then,
+  and `py-xmlvalidate.el`, which made `(require 'py-xmlvalidate)` work.
+  A configuration that still uses them must change to the
+  `py-schematron` names (see "Moving from py-xmlvalidate" in the README).
+- With this, the package's names and settings are stable.
+
 ## 0.11.0 — 2026-11-19 (py-schematron.py 2.6)
 
 - The fixes for nxml's XSD datatypes now go in when the mode is turned on

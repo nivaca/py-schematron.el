@@ -140,17 +140,13 @@ updates it. From GitHub, use `:host github`.
 ### Moving from py-xmlvalidate
 
 Until 0.7.0 the package was called py-xmlvalidate, in the repository
-py-xmlvalidate-emacs (and until 0.2.0 in the `emacs/` folder of the
-program's repository, then called py-xmlvalidate too). Change the recipe
-to one of the above. The former names of the options and commands
-(`py-xmlvalidate-…`) keep working as obsolete aliases, and
-`(require 'py-xmlvalidate)` still loads the package, so an older
-configuration works meanwhile, with warnings. **Version 1.0 will remove
-them**, and `py-xmlvalidate.el` with them: change your configuration to
-the `py-schematron` names before then. With Straight, the old
-clones `~/.emacs.d/straight/repos/py-xmlvalidate-emacs` and
-`~/.emacs.d/straight/repos/py-xmlvalidate` can then be deleted, and so
-can the old cache of nxml's schemas, `~/.emacs.d/py-xmlvalidate/`.
+py-xmlvalidate-emacs. Its former names (`py-xmlvalidate-…`) and
+`py-xmlvalidate.el` worked as obsolete aliases until 1.0, which removed
+them: an older configuration must use the `py-schematron` names, and the
+recipe one of the above. With Straight, the old clones
+`~/.emacs.d/straight/repos/py-xmlvalidate-emacs` and
+`~/.emacs.d/straight/repos/py-xmlvalidate` can be deleted, and so can the
+old cache of nxml's schemas, `~/.emacs.d/py-xmlvalidate/`.
 
 ### From a clone
 
