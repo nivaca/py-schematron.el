@@ -1,0 +1,27 @@
+To: bug-gnu-emacs@gnu.org
+Subject: nxml: XSD regexp [a-z-[aeiou]] is refused, and the datatype then accepts anything
+
+XSD regexps allow a character class subtraction after a range, as in
+[a-z-[aeiou]] (the consonants).  xsd-regexp refuses it:
+
+  (require 'xsd-regexp)
+  (xsdre-translate "[a-z-[aeiou]]")
+  => error: "- must be quoted in a character class"
+
+A subtraction is recognized only after a single character or an
+escape, as in [\p{L}-[a]].  A schema with such a pattern still loads,
+but nXML then accepts any value for that datatype.  For example, with
+
+  start = element t { attribute v { xsd:string { pattern = "[a-z-[aeiou]]+" } } }
+
+nXML reports <t v="bad"/> as valid; jing reports it as invalid.
+
+In xsdre-parse-char-class, after a single member a hyphen followed by [
+ends the group and starts the subtraction, but after a range the loop
+goes on, and the hyphen is then read as a member and refused.  Treating
+a hyphen followed by [ after a range the same way as after a single
+member fixes it.  (A hyphen at the start or end of a class, as in
+[a-c-], is refused too, but jing refuses it as well, following XSD 1.0,
+so that seems intended.)
+
+In GNU Emacs 31.1.90 (Fedora 45); the code is the same in master.

@@ -214,19 +214,31 @@ document's schema again, with a new check, and reloads it in every buffer
 that uses it. Use it if the cached copy seems wrong, or after changing
 `py-xmlvalidate-trang`.
 
-The package mends a bug in nxml's regular expressions. When nxml builds a
-Unicode category from its parts (`\p{P}` from `Pc`, `Pd` … `Po`), it
-damages its cached table of the last part, so after the first pattern that
-uses `\p{P}`, `\p{S}` or `\p{C}`, nxml rejects `#`, `%`, `!`, `@`, `¿`
-and more in values the schema allows, like `ed="#U2"` in TEI's
-`teidata.word`. The first time the package gives nxml a schema, it makes
-nxml copy those tables before using them (an advice on
-`xsdre-range-list-union`), and reloads them if they were already damaged.
-It first checks that the running Emacs has the bug, by giving
-`xsdre-range-list-union` two fresh lists and seeing whether it changes
-them, so an Emacs where the bug is fixed is left alone. Nothing else in
-nxml changes, and unloading the package removes the advice. Versions before 0.5.1 widened TEI's word pattern in nxml's copy
-instead, which fixed only that pattern.
+The package also mends three bugs in nxml's XSD datatypes, which make
+nxml reject values that the schema allows and jing accepts:
+
+- When nxml builds a Unicode category from its parts (`\p{P}` from `Pc`,
+  `Pd` … `Po`), it damages its cached table of the last part, so after the
+  first pattern that uses `\p{P}`, `\p{S}` or `\p{C}`, nxml rejects `#`,
+  `%`, `!`, `@`, `¿` and more, as in `ed="#U2"` with TEI's
+  `teidata.word`.
+- nxml's Unicode categories are those of Unicode 3.1 (2001), and leave out
+  every character beyond U+FFFF and from U+3400 to U+DFFF. So it rejects
+  letters added since, such as the medieval abbreviations `ꝑ` and `ꝯ`,
+  and CJK, Gothic and the rest, in TEI's `teidata.name` and
+  `teidata.word`. The package rebuilds the categories from Emacs's own
+  Unicode data, with caches, so that nxml is no slower (a little faster,
+  in fact, on the largest editions).
+- Values of `xsd:token` and similar types keep one space at either end
+  when their whitespace is collapsed, so `ed=" #U2"` fails `teidata.word`.
+
+Each bug is checked for in the running Emacs, as soon as nxml loads its
+XSD code, and mended only if it is there, so an Emacs where it is fixed
+is left alone. `M-x py-xmlvalidate-about` says what was mended, and
+`py-xmlvalidate-fix-nxml` set to nil turns all this off. Unloading the
+package removes its advice. On 200 TEI editions, nxml mended in this way
+agrees with jing on every document. The bugs are described for Emacs's
+bug tracker in `upstream/`.
 
 The converter is `py-xmlvalidate-trang`: `"trang"` (what
 `tools/install-trang.py` installs), or a command line as a list, for
@@ -276,6 +288,7 @@ The settings:
 | `py-xmlvalidate-live-max-size` | `nil` | Larger buffers (in characters) are checked on opening and saving only |
 | `py-xmlvalidate-frontend` | `auto` | `flycheck`, `flymake`, or `auto` (Flycheck if installed) |
 | `py-xmlvalidate-nxml-schema` | `t` | Give nxml-mode the document's RelaxNG schema, for completion |
+| `py-xmlvalidate-fix-nxml` | `t` | Mend nxml's XSD datatypes where the running Emacs needs it (see above) |
 | `py-xmlvalidate-trang` | `"trang"` | The trang converter: a program, or a command line as a list |
 
 `py-xmlvalidate-schema` and `py-xmlvalidate-schema-type` are safe as

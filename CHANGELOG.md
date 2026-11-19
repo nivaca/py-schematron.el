@@ -8,6 +8,22 @@ zip files, are on
 [py-xmlvalidate](https://codeberg.org/nivaca/py-xmlvalidate/releases), as
 `emacs-vVERSION`.
 
+## 0.7.0 — 2026-11-19 (py-xmlvalidate.py 1.21)
+
+- **Two more nxml bugs mended**, each only where the running Emacs has
+  it. nxml's Unicode categories date from Unicode 3.1 and stop at U+FFFF,
+  so it rejected the medieval abbreviations `ꝑ` and `ꝯ`, CJK, Gothic and
+  other letters in TEI's `teidata.name` and `teidata.word`; the package
+  rebuilds them from Emacs's own Unicode data, with caches, so nxml is no
+  slower. And `xsd:token` values kept a space at either end, so
+  `ed=" #U2"` failed `teidata.word`.
+- The fixes now go in as soon as nxml loads its XSD code, not when the
+  package first gives nxml a schema, so they also hold for a schema you
+  chose yourself. The new option `py-xmlvalidate-fix-nxml` turns them
+  off, and `M-x py-xmlvalidate-about` lists what was mended.
+- `upstream/` has the four nxml bugs written up for Emacs's bug tracker,
+  each with a recipe from `emacs -Q`.
+
 ## 0.6.0 — 2026-11-19 (py-xmlvalidate.py 1.21)
 
 - The package no longer reads the program's Spanish messages on stderr:

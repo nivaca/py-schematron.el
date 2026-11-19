@@ -822,38 +822,69 @@ Flymake's own warnings are left out."
 
 (declare-function xsdre-translate "xsd-regexp" (regexp))
 
-(ert-deftest pyxv-xsdre-fix ()
-  "nxml's \\p{P} keeps # % ! @ ¿ however often it is used, also after
-damage done before the fix, which reloading xsd-regexp undoes."
-  (require 'xsd-regexp)
-  (let ((matches (lambda (pattern s)
-                   (string-match-p (concat "\\`" (xsdre-translate pattern) "\\'") s))))
-    (unwind-protect
-        (progn
-          ;; without the fix, a second translation of \p{P} has lost #
-          (advice-remove 'xsdre-range-list-union #'py-xmlvalidate--xsdre-copy-ranges)
-          (load "xsd-regexp" nil t)
-          (funcall matches "\\p{P}" "#")
-          (should-not (funcall matches "\\p{P}" "#"))
-          ;; the fix restores the tables and keeps them whole
-          (setq py-xmlvalidate--xsdre-checked nil)
-          (should (py-xmlvalidate--xsdre-buggy-p))          ; (this Emacs has the bug)
-          (py-xmlvalidate--fix-xsdre)
-          (should (advice-member-p #'py-xmlvalidate--xsdre-copy-ranges 'xsdre-range-list-union))
-          (dotimes (_ 3)
-            (dolist (c '("#" "%" "!" "@" "¿" "-"))
-              (should (funcall matches "\\p{P}" c))))
-          (should (funcall matches pyxv-test--word-pattern "#U2"))
-          (should (funcall matches "[^\\p{C}\\p{Z}]+" "#U2"))
-          (should (funcall matches "\\w+" "abc"))
-          ;; unloading takes the advice away
-          (py-xmlvalidate-unload-function)
-          (should-not (advice-member-p #'py-xmlvalidate--xsdre-copy-ranges
-                                       'xsdre-range-list-union)))
-      ;; leave the other tests a mended nxml
-      (advice-remove 'xsdre-range-list-union #'py-xmlvalidate--xsdre-copy-ranges)
-      (setq py-xmlvalidate--xsdre-checked nil)
-      (py-xmlvalidate--fix-xsdre))))
+(defun pyxv-test--fresh-emacs (&rest forms)
+  "Evaluate FORMS in a new batch Emacs with the package; return what they print."
+  (let ((process-environment (cons (concat "PATH=" invocation-directory path-separator
+                                           (getenv "PATH"))
+                                   process-environment)))
+    (with-temp-buffer
+      (let ((code (apply #'call-process (expand-file-name invocation-name invocation-directory)
+                         nil t nil "--batch" "-Q" "-L" pyxv-test--repo
+                         (mapcan (lambda (f) (list "--eval" (prin1-to-string f))) forms))))
+        (unless (eq code 0) (error "Emacs failed (%s): %s" code (buffer-string)))
+        (buffer-string)))))
+
+(defconst pyxv-test--nxml-probe
+  '(progn
+     (defun probe (pattern s)
+       (string-match-p (concat "\\`" (xsdre-translate pattern) "\\'") s))
+     (princ (format "fixes=%S\n" py-xmlvalidate--nxml-fixes))
+     ;; \p{P} used three times, in different patterns (translations are cached)
+     (princ (format "P=%S\n" (list (and (probe "\\p{P}" "#") t) (and (probe "[\\p{P}]" "#") t)
+                                   (and (probe "(\\p{P})" "#") t))))
+     (princ (format "L=%S\n" (mapcar (lambda (c) (and (probe "\\p{L}+" c) t)) '("ꝑ" "𝔄" "中"))))
+     (princ (format "dot=%S\n" (and (probe "." "𝔄") t)))
+     (princ (format "tei=%S\n" (list (and (probe "[^\\p{C}\\p{Z}]+" "ꝑ#U2") t)
+                                     (and (probe "(\\p{L}|\\p{N}|\\p{P}|\\p{S})+" "ꝑ⸗#U2") t))))
+     (princ (format "token=%S\n"
+                    (and (rng-dt-make-value
+                          (cdr (rng-xsd-compile 'token '((pattern . "(\\p{L}|\\p{N}|\\p{P}|\\p{S})+"))))
+                          " #U2")
+                         t))))
+  "Prints what nxml's XSD code does with the cases its bugs get wrong.")
+
+(ert-deftest pyxv-nxml-mending ()
+  "nxml's three bugs are mended as soon as it loads its XSD code."
+  (let ((out (pyxv-test--fresh-emacs
+              '(require 'py-xmlvalidate) '(require 'rng-xsd) pyxv-test--nxml-probe)))
+    (should (string-match-p "^fixes=(whitespace unicode category-tables)$" out))
+    (should (string-match-p "^P=(t t t)$" out))
+    (should (string-match-p "^L=(t t t)$" out))
+    (should (string-match-p "^dot=t$" out))
+    (should (string-match-p "^tei=(t t)$" out))
+    (should (string-match-p "^token=t$" out))))
+
+(ert-deftest pyxv-nxml-mending-off ()
+  "With `py-xmlvalidate-fix-nxml' nil, nxml is left as it is, bugs and all."
+  (let ((out (pyxv-test--fresh-emacs
+              '(require 'py-xmlvalidate) '(setq py-xmlvalidate-fix-nxml nil)
+              '(require 'rng-xsd) pyxv-test--nxml-probe)))
+    (should (string-match-p "^fixes=nil$" out))
+    (should (string-match-p "^P=(t nil nil)$" out))         ; damaged after the first use
+    (should (string-match-p "^L=(nil nil nil)$" out))
+    (should (string-match-p "^token=nil$" out))))
+
+(ert-deftest pyxv-nxml-mending-late ()
+  "Loaded after nxml has damaged its tables, the package still mends them."
+  (let ((out (pyxv-test--fresh-emacs
+              '(require 'rng-xsd)
+              '(progn (xsdre-translate "\\p{P}") (xsdre-translate "\\p{P}"))   ; (the damage)
+              '(require 'py-xmlvalidate)
+              '(py-xmlvalidate--fix-xsdre) '(py-xmlvalidate--fix-rng-xsd)
+              pyxv-test--nxml-probe)))
+    (should (string-match-p "^P=(t t t)$" out))
+    (should (string-match-p "^L=(t t t)$" out))
+    (should (string-match-p "^token=t$" out))))
 
 (declare-function xsdre-make-range-list "xsd-regexp" (list))
 
@@ -978,6 +1009,7 @@ and the program's own --about; a missing Python is said, not an error."
         (should (string-search "Nicolas Vaughan <nicolasvaughan@proton.me>" (buffer-string)))
         (should (string-match-p "^py-xmlvalidate\\.py [0-9]+\\.[0-9]+$" (buffer-string)))
         (should (string-search "saxonche:" (buffer-string)))
+        (should (string-match-p "^nxml:     " (buffer-string)))
         (goto-char (point-min))
         (search-forward "https://codeberg.org/nivaca/py-xmlvalidate-emacs")
         (should (button-at (1- (point))))

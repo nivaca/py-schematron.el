@@ -4,7 +4,7 @@
 ;; Copyright (C) 2026 Nicolas Vaughan <nicolasvaughan@proton.me>
 
 ;; Author: Nicolas Vaughan <nicolasvaughan@proton.me>
-;; Version: 0.6.0
+;; Version: 0.7.0
 ;; Package-Requires: ((emacs "31.1"))
 ;; Keywords: languages, xml, tools
 ;; URL: https://codeberg.org/nivaca/py-xmlvalidate-emacs
@@ -706,6 +706,30 @@ with py-xmlvalidate.py and jing.  See `py-xmlvalidate-mode'."
 (defvar py-xmlvalidate--trang-warned nil
   "Whether the missing trang has already been reported.")
 
+;;;; Mending nxml
+;;
+;; nxml (Emacs 31 and earlier) has bugs in its XSD datatypes that make it
+;; reject valid values in TEI and other schemas.  Each is checked for in
+;; the running Emacs, and mended only there, so that an Emacs where it is
+;; fixed is left alone.  The bug reports for Emacs are in upstream/.
+
+(defcustom py-xmlvalidate-fix-nxml t
+  "Whether to mend nxml's XSD datatypes where the running Emacs needs it.
+When non-nil, as soon as nxml loads its XSD code, the package checks
+the running Emacs for these bugs and mends each one found:
+- building a Unicode category (\\p{P}, \\p{S}, \\p{C}) damages nxml's
+  table of its last part, so # % ! @ ¿ and more are soon rejected;
+- the categories are those of Unicode 3.1 (2001), and leave out every
+  character beyond U+FFFF and from U+3400 to U+DFFF, so newer letters
+  such as the medieval abbreviations ꝑ ꝯ, CJK and Gothic are rejected;
+- a value of xsd:token or a similar type keeps one space at either
+  end, so \" #U2\" fails TEI's teidata.word pattern.
+`py-xmlvalidate-about' lists what was mended."
+  :type 'boolean)
+
+(defvar py-xmlvalidate--nxml-fixes nil
+  "The nxml bugs mended in this session, as symbols.")
+
 (defun py-xmlvalidate--xsdre-copy-ranges (args)
   "Copy the range lists that nxml's `xsdre-range-list-union' gets in ARGS.
 That function joins them with `append', which does not copy the last
@@ -714,11 +738,17 @@ ranges of the last category of a union (Po in \\p{P}, So in \\p{S},
 Cn in \\p{C}, and through them \\w) lose characters each time a
 pattern uses it, and nxml soon rejects # % ! @ ¿ and more in values
 the schema allows, like ed=\"#U2\" in TEI's teidata.word.  With
-copies the tables stay whole; once Emacs copies them itself, this
-changes nothing."
+copies the tables stay whole."
   (list (mapcar #'copy-sequence (car args))))
 
 (declare-function xsdre-range-list-union "xsd-regexp" (range-lists))
+(declare-function xsdre-make-range "xsd-regexp" (first last))
+(declare-function xsdre-make-range-list "xsd-regexp" (list))
+(declare-function xsdre-range-first "xsd-regexp" (r))
+(declare-function xsdre-range-last "xsd-regexp" (r))
+(defvar xsdre-mule-char-set-ranges)
+(defvar xsdre-gen-categories)
+(defvar xsdre-translations)
 
 (defun py-xmlvalidate--xsdre-buggy-p ()
   "Whether this Emacs's `xsdre-range-list-union' changes its arguments.
@@ -732,38 +762,146 @@ tables.  Loads xsd-regexp."
     (xsdre-range-list-union (list (list 1) last))
     (not (equal last copy))))
 
+(defun py-xmlvalidate--in-ranges-p (char ranges)
+  "Whether CHAR is in RANGES, a range-list of xsd-regexp."
+  (seq-some (lambda (r) (<= (xsdre-range-first r) char (xsdre-range-last r))) ranges))
+
+(defun py-xmlvalidate--xsdre-old-unicode-p ()
+  "Whether nxml's Unicode categories are its old ones.
+That is, whether the letter U+A751 (Unicode 5.1) is missing from Ll,
+or the characters nxml's regexps can match stop short of U+10FFFF."
+  (require 'xsd-regexp)
+  (or (not (py-xmlvalidate--in-ranges-p #xA751 (get 'Ll 'xsdre-ranges)))
+      (and (boundp 'xsdre-mule-char-set-ranges)
+           (not (py-xmlvalidate--in-ranges-p #x10FFFF xsdre-mule-char-set-ranges)))))
+
+(defun py-xmlvalidate--unicode-categories ()
+  "The Unicode general categories nxml defines, from Emacs's own data.
+An alist (CATEGORY . RANGES), RANGES a range-list of xsd-regexp, from
+`unicode-category-table', for the characters up to U+10FFFF."
+  (let ((ranges nil)
+        (names (make-hash-table)))
+    (map-char-table
+     (lambda (key value)
+       (let ((first (if (consp key) (car key) key))
+             (last (if (consp key) (cdr key) key)))
+         (when (and value (<= first #x10FFFF))
+           (let ((name (or (gethash value names)
+                           (puthash value (get-char-code-property first 'general-category)
+                                    names))))
+             (when (memq name xsdre-gen-categories)
+               (push (xsdre-make-range first (min last #x10FFFF))
+                     (alist-get name ranges)))))))
+     unicode-category-table)
+    (mapcar (lambda (name) (cons name (xsdre-make-range-list (alist-get name ranges))))
+            xsdre-gen-categories)))
+
+(defvar py-xmlvalidate--translations (make-hash-table :test #'equal)
+  "Translations of XSD regexps, made once each.
+See `py-xmlvalidate--cache-translation'.")
+
+(defvar py-xmlvalidate--cached-classes nil
+  "Derived categories whose ranges this package cached.")
+
+(defun py-xmlvalidate--cache-translation (translate regexp)
+  "Call TRANSLATE on REGEXP only the first time.
+With the current Unicode categories a translation can take several
+milliseconds, and a TEI schema uses the same few patterns hundreds
+of times."
+  (or (gethash regexp py-xmlvalidate--translations)
+      (puthash regexp (funcall translate regexp) py-xmlvalidate--translations)))
+
+(defun py-xmlvalidate--cache-class (ranges-of cc)
+  "Call RANGES-OF on CC, a char-class, once for a derived category such as L."
+  (if (and (symbolp cc) (not (get cc 'xsdre-ranges)) (get cc 'xsdre-char-class))
+      (progn (push cc py-xmlvalidate--cached-classes)
+             (put cc 'xsdre-ranges (funcall ranges-of cc)))
+    (funcall ranges-of cc)))
+
+(defun py-xmlvalidate--trim-collapsed (args)
+  "Remove the spaces at either end of the string in ARGS.
+For nxml's `rng-xsd-collapse-space', which keeps one at either end."
+  (cons (string-trim (car args) "[ \t\n\r]+" "[ \t\n\r]+") (cdr args)))
+
+(declare-function rng-xsd-collapse-space "rng-xsd" (str convert &rest args))
+
+(defun py-xmlvalidate--rng-xsd-buggy-p ()
+  "Whether nxml's whitespace collapsing keeps a space at either end."
+  (require 'rng-xsd)
+  (equal (rng-xsd-collapse-space " a " #'identity) " a "))
+
 (defvar py-xmlvalidate--xsdre-checked nil
   "Whether `py-xmlvalidate--fix-xsdre' has already looked at this Emacs.")
 
+(defvar py-xmlvalidate--rng-xsd-checked nil
+  "Whether `py-xmlvalidate--fix-rng-xsd' has already looked at this Emacs.")
+
 (defun py-xmlvalidate--fix-xsdre ()
   "Mend nxml's regexps of Unicode categories, if this Emacs needs it.
-See `py-xmlvalidate--xsdre-copy-ranges'.  Done when this package
-first gives nxml a schema, not on loading, and only when
-`py-xmlvalidate--xsdre-buggy-p' finds the bug, so that an Emacs
-where it is fixed is left alone.  Tables already damaged in this
-session are restored by loading xsd-regexp's source again, which
-holds them.  (Its source: a compiled file, natively compiled above all,
-may give back the same, damaged, lists.)"
-  (unless (or py-xmlvalidate--xsdre-checked
-              (advice-member-p #'py-xmlvalidate--xsdre-copy-ranges 'xsdre-range-list-union))
+Two bugs, each mended only when this Emacs has it (see
+`py-xmlvalidate-fix-nxml'): the damaged tables of
+`py-xmlvalidate--xsdre-copy-ranges', and the old categories of
+`py-xmlvalidate--xsdre-old-unicode-p', which are rebuilt from Emacs's
+own Unicode data, with caches so that nxml is no slower.  If the
+first bug had already damaged the tables in this session and the
+categories are not rebuilt, they are restored by loading
+xsd-regexp's source again.  (Its source: a compiled file, natively
+compiled above all, may give back the same, damaged, lists.)"
+  (when (and py-xmlvalidate-fix-nxml (not py-xmlvalidate--xsdre-checked))
     (setq py-xmlvalidate--xsdre-checked t)
-    (when (let ((was-loaded (featurep 'xsd-regexp)))
-            (and (py-xmlvalidate--xsdre-buggy-p)
-                 (progn (advice-add 'xsdre-range-list-union :filter-args
-                                    #'py-xmlvalidate--xsdre-copy-ranges)
-                        was-loaded)))
-      (condition-case err
-          (unless (let ((inhibit-message t) (message-log-max nil))   ; ("uncompressing...")
-                    (load "xsd-regexp.el" t t))
-            (py-xmlvalidate--log "nxml's xsd-regexp.el was not found, so tables damaged \
+    (let ((was-loaded (featurep 'xsd-regexp))
+          (copy (py-xmlvalidate--xsdre-buggy-p))
+          (unicode (py-xmlvalidate--xsdre-old-unicode-p)))
+      (when copy
+        (advice-add 'xsdre-range-list-union :filter-args #'py-xmlvalidate--xsdre-copy-ranges)
+        (push 'category-tables py-xmlvalidate--nxml-fixes))
+      (when unicode
+        (dolist (category (py-xmlvalidate--unicode-categories))
+          (put (car category) 'xsdre-ranges (cdr category)))
+        (when (boundp 'xsdre-mule-char-set-ranges)
+          (setq xsdre-mule-char-set-ranges '((0 . #x10FFFF))))
+        (unless (boundp 'xsdre-translations)               ; (Emacs's own caches)
+          (advice-add 'xsdre-translate :around #'py-xmlvalidate--cache-translation)
+          (advice-add 'xsdre-char-class-to-range-list :around #'py-xmlvalidate--cache-class))
+        (push 'unicode py-xmlvalidate--nxml-fixes))
+      (when (and copy was-loaded (not unicode))
+        (condition-case err
+            (unless (let ((inhibit-message t) (message-log-max nil))   ; ("uncompressing...")
+                      (load "xsd-regexp.el" t t))
+              (py-xmlvalidate--log "nxml's xsd-regexp.el was not found, so tables damaged \
 before this package mended nxml stay so until Emacs restarts"))
-        (error (py-xmlvalidate--log (format "xsd-regexp.el could not be loaded again: %s"
-                                            (error-message-string err))))))))
+          (error (py-xmlvalidate--log (format "xsd-regexp.el could not be loaded again: %s"
+                                              (error-message-string err))))))
+      (when (or copy unicode)
+        (py-xmlvalidate--log (format "nxml mended: %s" py-xmlvalidate--nxml-fixes))))))
+
+(defun py-xmlvalidate--fix-rng-xsd ()
+  "Mend nxml's whitespace collapsing, if this Emacs needs it.
+See `py-xmlvalidate--trim-collapsed' and `py-xmlvalidate-fix-nxml'."
+  (when (and py-xmlvalidate-fix-nxml (not py-xmlvalidate--rng-xsd-checked))
+    (setq py-xmlvalidate--rng-xsd-checked t)
+    (when (py-xmlvalidate--rng-xsd-buggy-p)
+      (advice-add 'rng-xsd-collapse-space :filter-args #'py-xmlvalidate--trim-collapsed)
+      (push 'whitespace py-xmlvalidate--nxml-fixes)
+      (py-xmlvalidate--log (format "nxml mended: %s" py-xmlvalidate--nxml-fixes)))))
+
+;; As soon as nxml loads its XSD code, before it compiles any schema.
+(with-eval-after-load 'xsd-regexp (py-xmlvalidate--fix-xsdre))
+(with-eval-after-load 'rng-xsd (py-xmlvalidate--fix-rng-xsd))
 
 (defun py-xmlvalidate-unload-function ()
-  "Undo `py-xmlvalidate--fix-xsdre' when the package is unloaded."
+  "Undo the package's mending of nxml when the package is unloaded.
+The rebuilt Unicode categories stay, being correct."
   (advice-remove 'xsdre-range-list-union #'py-xmlvalidate--xsdre-copy-ranges)
-  (setq py-xmlvalidate--xsdre-checked nil)
+  (advice-remove 'xsdre-translate #'py-xmlvalidate--cache-translation)
+  (advice-remove 'xsdre-char-class-to-range-list #'py-xmlvalidate--cache-class)
+  (advice-remove 'rng-xsd-collapse-space #'py-xmlvalidate--trim-collapsed)
+  (dolist (cc py-xmlvalidate--cached-classes) (put cc 'xsdre-ranges nil))
+  (clrhash py-xmlvalidate--translations)
+  (setq py-xmlvalidate--cached-classes nil
+        py-xmlvalidate--nxml-fixes nil
+        py-xmlvalidate--xsdre-checked nil
+        py-xmlvalidate--rng-xsd-checked nil)
   nil)
 
 (defun py-xmlvalidate--rnc-file (rng)
@@ -827,6 +965,7 @@ revalidates by itself when the schema changes."
     (condition-case err
         (progn
           (py-xmlvalidate--fix-xsdre)
+          (py-xmlvalidate--fix-rng-xsd)
           (rng-set-schema-file-1 rnc)
           (setq py-xmlvalidate--nxml-rnc rnc))
       (error
@@ -1288,10 +1427,22 @@ Below, what the package's py-xmlvalidate.py says of itself (its
         (funcall link "https://github.com/nivaca/py-xmlvalidate-emacs")
         (insert "\nProgram:  ")
         (funcall link "https://codeberg.org/nivaca/py-xmlvalidate")
-        (insert (format "\n\nPackage:  %s\nChecker:  %s%s\n"
+        (insert (format "\n\nPackage:  %s\nChecker:  %s%s\nnxml:     %s\n"
                         (abbreviate-file-name (file-truename el))
                         (py-xmlvalidate--frontend)
-                        (if (eq py-xmlvalidate-frontend 'auto) " (py-xmlvalidate-frontend is auto)" ""))
+                        (if (eq py-xmlvalidate-frontend 'auto) " (py-xmlvalidate-frontend is auto)" "")
+                        (cond
+                         ((not py-xmlvalidate-fix-nxml) "left as it is (py-xmlvalidate-fix-nxml is nil)")
+                         (py-xmlvalidate--nxml-fixes
+                          (format "mended: %s"
+                                  (mapconcat (lambda (f)
+                                               (pcase f
+                                                 ('category-tables "damaged category tables")
+                                                 ('unicode "Unicode categories (now Emacs's own)")
+                                                 ('whitespace "whitespace collapsing")))
+                                             (reverse py-xmlvalidate--nxml-fixes) ", ")))
+                         ((and (featurep 'xsd-regexp) (featurep 'rng-xsd)) "nothing to mend in this Emacs")
+                         (t "not used yet in this session")))
                 "\nThe package's py-xmlvalidate.py (--about):\n\n"
                 program "\n")
         (goto-char (point-min))

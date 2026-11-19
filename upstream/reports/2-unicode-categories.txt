@@ -1,0 +1,55 @@
+To: bug-gnu-emacs@gnu.org
+Subject: nxml: XSD regexps use Unicode 3.1 categories and stop at U+FFFF
+
+The Unicode categories of nXML's XSD regexps (\p{L}, \p{P} and so on)
+come from a table generated from UnicodeData 3.1.0 (2001).  Besides,
+every character class is intersected with the old Mule charsets, which
+leaves out all characters beyond U+FFFF and those from U+3400 to
+U+DFFF.  So nXML rejects, in patterns that jing and other validators
+accept:
+
+- letters added since Unicode 3.1, such as the medieval abbreviations
+  U+A751 (ꝑ) and U+A76F (ꝯ), used in editions of Latin texts;
+- CJK ideographs and Hangul, in \p{L} and even in ".";
+- every character beyond U+FFFF, such as U+10330 (𐌰, Gothic) and
+  U+1D504 (𝔄);
+- characters whose category changed, such as § (Po since Unicode 6.1).
+
+TEI's patterns "[^\p{C}\p{Z}]+" (teidata.name) and
+"(\p{L}|\p{N}|\p{P}|\p{S})+" (teidata.word) are affected: a value
+containing ꝑ is reported as an error.
+
+Recipe, from emacs -Q:
+
+  (require 'xsd-regexp)
+  (dolist (s '("ꝑ" "中" "𝔄"))
+    (message "%s: %s" s (string-match-p
+                         (concat "\\`" (xsdre-translate "\\p{L}") "\\'") s)))
+  (message ".: %s" (string-match-p
+                    (concat "\\`" (xsdre-translate ".") "\\'") "𝔄"))
+
+Result: nil four times.  Expected: 0 four times.
+
+The commentary of xsd-regexp.el already describes the limit and asks
+for "a workaround for this until the fabled Unicode version of Emacs
+makes an appearance".  Emacs now has that data: `unicode-category-table'
+gives the general category of every character, in the Unicode version
+Emacs itself uses, and the Mule charsets no longer limit what a regexp
+can match.  Taking the categories from that table, for all characters
+up to U+10FFFF, and dropping the intersection with the Mule charsets
+(xsdre-range-list-mule-intersection) fixes the cases above.
+
+One thing to keep in mind: the categories become much larger (\p{L}
+then translates to about 1700 characters), and translating one takes
+several milliseconds, while a TEI schema translates the same few
+patterns hundreds of times.  In my tests on 10 large TEI editions,
+validation went from 2.1 s to 12.5 s with only the new categories;
+caching the translations and the ranges of the derived categories (L,
+P, C...) brought it back to 1.9 s.  The cache of derived categories is
+only safe once the bug of the damaged category ranges (bug#NNNNN) is
+fixed.
+
+With these changes, nXML gave the same verdict as jing on each of 200
+TEI editions.
+
+In GNU Emacs 31.1.90 (Fedora 45); the code is the same in master.
