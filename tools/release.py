@@ -29,7 +29,10 @@ The tag is vVERSION.  In order, the script:
      this commit, release notes found, and (in a plugin) a copy of
      py-schematron.py that is the same as ../py-schematron's;
   2. runs the tests (the unittest suites of the programs, the Emacs
-     package's ERT tests, the extension's unit tests);
+     package's ERT tests, the extension's unit tests); for py-schematron,
+     when $PY_SCHEMATRON_CORPUS names a corpus, also tools/corpus-check.py,
+     which compares the results with the last release's on every document,
+     and stops if any changed (--accept-corpus-changes, when that is meant);
   3. makes the file;
   4. tags the commit and pushes main and the tag to Codeberg and GitHub;
   5. makes the release on Codeberg (with tea) and on GitHub (with gh), with
@@ -125,8 +128,21 @@ class Program:
     def footer(self, name):
         return (f"File: `{name}`, the scripts, the tests and the documentation.")
 
+    accept_corpus_changes = False
+
     def test(self):
         run(sys.executable, "-m", "unittest", "discover", "-s", "tests", capture=False)
+        check = ROOT / "tools" / "corpus-check.py"
+        if not (check.is_file() and os.environ.get("PY_SCHEMATRON_CORPUS")):
+            say("  (no corpus check: set PY_SCHEMATRON_CORPUS to the folders of your documents)")
+            return
+        say("== the corpus check")
+        result = subprocess.run([sys.executable, str(check)], cwd=ROOT)
+        if result.returncode == 1 and not self.accept_corpus_changes:
+            raise Failure("Results changed on the corpus (above); if that is meant, "
+                          "run again with --accept-corpus-changes")
+        if result.returncode not in (0, 1):
+            raise Failure(f"tools/corpus-check.py failed ({result.returncode})")
 
     def build(self, version):
         run(sys.executable, "tools/bundle-zip.py", capture=False)
@@ -231,6 +247,9 @@ class Odd2rng(Program):
 
     def footer(self, name):
         return (f"File: `{name}`, the script, its installer, the tests and the documentation.")
+
+    def test(self):
+        run(sys.executable, "-m", "unittest", "discover", "-s", "tests", capture=False)
 
 
 def kind():
@@ -376,11 +395,14 @@ def main(argv=None):
                         help="check, test and build, and say what would follow; change nothing")
     parser.add_argument("--yes", action="store_true", help="do not ask before tagging and pushing")
     parser.add_argument("--skip-tests", action="store_true", help="do not run the tests")
+    parser.add_argument("--accept-corpus-changes", action="store_true",
+                        help="py-schematron: go on although tools/corpus-check.py found changed results")
     parser.add_argument("--notes", metavar="FILE",
                         help="the release notes, instead of those of the changelog or README")
     args = parser.parse_args(argv)
     try:
         k = kind()
+        k.accept_corpus_changes = args.accept_corpus_changes
         say(f"== {k.repo}: checks")
         version, tag, tagged, notes = checks(k, args.notes)
         say(f"  version {version}, tag {tag}" + (" (exists on this commit)" if tagged else ""))
