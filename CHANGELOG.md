@@ -21,6 +21,10 @@ zip files, are on
   the `.sch` made from it). With several, it asks which; `M-,` returns.
   It works with Flymake and with Flycheck. Needs py-xmlvalidate.py 1.21,
   which says where each rule is.
+- The fix for nxml's punctuation bug is applied only when the running
+  Emacs has the bug: the package first gives `xsdre-range-list-union` two
+  fresh lists and sees whether it changes them. Once Emacs fixes it, the
+  package leaves nxml alone, with no change needed here.
 - The tests run on GitHub every Monday too.
 
 ## 0.5.1 — 2026-11-18 (py-xmlvalidate.py 1.20)

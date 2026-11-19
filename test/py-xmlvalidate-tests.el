@@ -836,7 +836,10 @@ damage done before the fix, which reloading xsd-regexp undoes."
           (funcall matches "\\p{P}" "#")
           (should-not (funcall matches "\\p{P}" "#"))
           ;; the fix restores the tables and keeps them whole
+          (setq py-xmlvalidate--xsdre-checked nil)
+          (should (py-xmlvalidate--xsdre-buggy-p))          ; (this Emacs has the bug)
           (py-xmlvalidate--fix-xsdre)
+          (should (advice-member-p #'py-xmlvalidate--xsdre-copy-ranges 'xsdre-range-list-union))
           (dotimes (_ 3)
             (dolist (c '("#" "%" "!" "@" "¿" "-"))
               (should (funcall matches "\\p{P}" c))))
@@ -849,7 +852,28 @@ damage done before the fix, which reloading xsd-regexp undoes."
                                        'xsdre-range-list-union)))
       ;; leave the other tests a mended nxml
       (advice-remove 'xsdre-range-list-union #'py-xmlvalidate--xsdre-copy-ranges)
+      (setq py-xmlvalidate--xsdre-checked nil)
       (py-xmlvalidate--fix-xsdre))))
+
+(declare-function xsdre-make-range-list "xsd-regexp" (list))
+
+(ert-deftest pyxv-xsdre-fixed-emacs ()
+  "An Emacs whose union copies its lists is left alone: no advice."
+  (require 'xsd-regexp)
+  (let ((fixed (lambda (range-lists)
+                 (xsdre-make-range-list (apply #'append (append range-lists (list nil))))))
+        (had (advice-member-p #'py-xmlvalidate--xsdre-copy-ranges 'xsdre-range-list-union)))
+    (advice-remove 'xsdre-range-list-union #'py-xmlvalidate--xsdre-copy-ranges)
+    (unwind-protect
+        (cl-letf (((symbol-function 'xsdre-range-list-union) fixed))
+          (let ((py-xmlvalidate--xsdre-checked nil))
+            (should-not (py-xmlvalidate--xsdre-buggy-p))
+            (py-xmlvalidate--fix-xsdre)
+            (should-not (advice-member-p #'py-xmlvalidate--xsdre-copy-ranges
+                                         'xsdre-range-list-union))
+            (should py-xmlvalidate--xsdre-checked)))
+      (when had
+        (advice-add 'xsdre-range-list-union :filter-args #'py-xmlvalidate--xsdre-copy-ranges)))))
 
 ;;;; Recreating the schema for nxml
 

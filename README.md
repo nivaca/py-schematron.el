@@ -222,8 +222,10 @@ and more in values the schema allows, like `ed="#U2"` in TEI's
 `teidata.word`. The first time the package gives nxml a schema, it makes
 nxml copy those tables before using them (an advice on
 `xsdre-range-list-union`), and reloads them if they were already damaged.
-Nothing else in nxml changes, and unloading the package removes the
-advice. Versions before 0.5.1 widened TEI's word pattern in nxml's copy
+It first checks that the running Emacs has the bug, by giving
+`xsdre-range-list-union` two fresh lists and seeing whether it changes
+them, so an Emacs where the bug is fixed is left alone. Nothing else in
+nxml changes, and unloading the package removes the advice. Versions before 0.5.1 widened TEI's word pattern in nxml's copy
 instead, which fixed only that pattern.
 
 The converter is `py-xmlvalidate-trang`: `"trang"` (what

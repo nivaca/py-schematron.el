@@ -718,16 +718,40 @@ copies the tables stay whole; once Emacs copies them itself, this
 changes nothing."
   (list (mapcar #'copy-sequence (car args))))
 
+(declare-function xsdre-range-list-union "xsd-regexp" (range-lists))
+
+(defun py-xmlvalidate--xsdre-buggy-p ()
+  "Whether this Emacs's `xsdre-range-list-union' changes its arguments.
+It is given two fresh lists, the last one out of order, and the
+result is whether that list came back changed: the bug of
+`py-xmlvalidate--xsdre-copy-ranges', found without touching nxml's
+tables.  Loads xsd-regexp."
+  (require 'xsd-regexp)
+  (let* ((last (list (cons 10 20) 5))
+         (copy (copy-tree last)))
+    (xsdre-range-list-union (list (list 1) last))
+    (not (equal last copy))))
+
+(defvar py-xmlvalidate--xsdre-checked nil
+  "Whether `py-xmlvalidate--fix-xsdre' has already looked at this Emacs.")
+
 (defun py-xmlvalidate--fix-xsdre ()
-  "Mend nxml's regexps of Unicode categories.
+  "Mend nxml's regexps of Unicode categories, if this Emacs needs it.
 See `py-xmlvalidate--xsdre-copy-ranges'.  Done when this package
-first gives nxml a schema, not on loading.  Tables already damaged in
-this session are restored by loading xsd-regexp's source again, which
+first gives nxml a schema, not on loading, and only when
+`py-xmlvalidate--xsdre-buggy-p' finds the bug, so that an Emacs
+where it is fixed is left alone.  Tables already damaged in this
+session are restored by loading xsd-regexp's source again, which
 holds them.  (Its source: a compiled file, natively compiled above all,
 may give back the same, damaged, lists.)"
-  (unless (advice-member-p #'py-xmlvalidate--xsdre-copy-ranges 'xsdre-range-list-union)
-    (advice-add 'xsdre-range-list-union :filter-args #'py-xmlvalidate--xsdre-copy-ranges)
-    (when (featurep 'xsd-regexp)
+  (unless (or py-xmlvalidate--xsdre-checked
+              (advice-member-p #'py-xmlvalidate--xsdre-copy-ranges 'xsdre-range-list-union))
+    (setq py-xmlvalidate--xsdre-checked t)
+    (when (let ((was-loaded (featurep 'xsd-regexp)))
+            (and (py-xmlvalidate--xsdre-buggy-p)
+                 (progn (advice-add 'xsdre-range-list-union :filter-args
+                                    #'py-xmlvalidate--xsdre-copy-ranges)
+                        was-loaded)))
       (condition-case err
           (unless (let ((inhibit-message t) (message-log-max nil))   ; ("uncompressing...")
                     (load "xsd-regexp.el" t t))
@@ -739,6 +763,7 @@ before this package mended nxml stay so until Emacs restarts"))
 (defun py-xmlvalidate-unload-function ()
   "Undo `py-xmlvalidate--fix-xsdre' when the package is unloaded."
   (advice-remove 'xsdre-range-list-union #'py-xmlvalidate--xsdre-copy-ranges)
+  (setq py-xmlvalidate--xsdre-checked nil)
   nil)
 
 (defun py-xmlvalidate--rnc-file (rng)
