@@ -8,6 +8,15 @@ zip files, are on
 [py-schematron](https://codeberg.org/nivaca/py-schematron/releases), as
 `emacs-vVERSION`.
 
+## 0.10.1 — 2026-11-19
+
+- **An untrusted file was checked on Windows.** The Flymake backend left
+  the `trusted-content` rule to Flymake, which does not call backends for
+  an untrusted file on most systems, but does on Windows; there, a
+  document outside `trusted-content` was checked, and its schema run. The
+  backend now refuses such a file itself, as the Flycheck checker already
+  did. (Found by the new tests on Windows.)
+
 ## 0.10.0 — 2026-11-19
 
 - **jing on Windows.** `py-schematron-jing` can name a `jing.jar`, which

@@ -4,7 +4,7 @@
 ;; Copyright (C) 2026 Nicolas Vaughan <nicolasvaughan@proton.me>
 
 ;; Author: Nicolas Vaughan <nicolasvaughan@proton.me>
-;; Version: 0.10.0
+;; Version: 0.10.1
 ;; Package-Requires: ((emacs "31.1"))
 ;; Keywords: languages, xml, tools
 ;; URL: https://codeberg.org/nivaca/py-schematron.el
@@ -675,9 +675,12 @@ events, so then from its \"[descarga] URL\" line in STDERR."
 
 (defun py-schematron-flymake (report-fn &rest _args)
   "Flymake backend: check the buffer, then call REPORT-FN.
-Each call cancels the check still under way, if any."
+Each call cancels the check still under way, if any.  A buffer outside
+`trusted-content' is not checked: Flymake does not call the backend
+there on most systems, but it does on Windows, so the backend checks
+too."
   (py-schematron--kill)
-  (if (not (py-schematron--applicable-p))
+  (if (not (and (py-schematron--applicable-p) (trusted-content-p)))
       (funcall report-fn nil)
     (py-schematron--check
      (lambda (items used)

@@ -395,12 +395,13 @@ Flymake's own warnings are left out."
           (ert-info ((format "Flymake: disabled %S, running %S, trusted-content-p %S, file %S"
                              (flymake-disabled-backends) (flymake-running-backends)
                              (trusted-content-p) buffer-file-truename))
-            ;; (Flymake lists the backend as disabled for an untrusted file;
-            ;; on Windows it calls the backend, which then checks nothing)
-            ;; (and the package starts no check of its own)
-            (if (eq system-type 'windows-nt)
-                (should-not py-schematron--run)
-              (should (flymake-disabled-backends)))
+            ;; (Flymake does not call the backend for an untrusted file, but
+            ;; it does on Windows: the backend must refuse it itself)
+            (should-not py-schematron--run)
+            (let ((reported :none))
+              (py-schematron-flymake (lambda (diags &rest _) (setq reported diags)))
+              (should (null reported))
+              (should-not py-schematron--run))
             (should (null (flymake-diagnostics))))
           ;; the commands explain instead of doing nothing
           (should (string-match-p "is not in .trusted-content."
