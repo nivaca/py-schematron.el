@@ -392,8 +392,15 @@ Flymake's own warnings are left out."
           (should (string-match-p "M-x py-schematron-trust-file" (car warnings)))
           (should (string-match-p "(add-to-list 'trusted-content \".*invalid.xml\")" (car warnings)))
           (flymake-start nil t)
-          (should (flymake-disabled-backends))
-          (should (null (flymake-diagnostics)))
+          (ert-info ((format "Flymake: disabled %S, running %S, trusted-content-p %S, file %S"
+                             (flymake-disabled-backends) (flymake-running-backends)
+                             (trusted-content-p) buffer-file-truename))
+            ;; (Flymake lists the backend as disabled for an untrusted file;
+            ;; on Windows it does not, but nothing runs there either)
+            (if (eq system-type 'windows-nt)
+                (should-not (flymake-running-backends))
+              (should (flymake-disabled-backends)))
+            (should (null (flymake-diagnostics))))
           ;; the commands explain instead of doing nothing
           (should (string-match-p "is not in .trusted-content."
                                   (cadr (should-error (py-schematron-check) :type 'user-error))))

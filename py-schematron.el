@@ -4,7 +4,7 @@
 ;; Copyright (C) 2026 Nicolas Vaughan <nicolasvaughan@proton.me>
 
 ;; Author: Nicolas Vaughan <nicolasvaughan@proton.me>
-;; Version: 0.9.2
+;; Version: 0.9.3
 ;; Package-Requires: ((emacs "31.1"))
 ;; Keywords: languages, xml, tools
 ;; URL: https://codeberg.org/nivaca/py-schematron.el
@@ -479,7 +479,7 @@ started), stdout and stderr.  NAME names the process."
         (let ((proc
                ;; py-schematron.py writes UTF-8 (Python 3.15 and later do),
                ;; whatever the system's code page, as on Windows
-               (let ((coding-system-for-read 'utf-8-unix)
+               (let ((coding-system-for-read 'utf-8)
                      (coding-system-for-write 'utf-8-unix))
                 (make-process
                 :name name :buffer out :stderr err
@@ -1050,12 +1050,13 @@ copy.  With ANNOUNCE, say so when it is done."
                        (let ((n 0))
                          (py-schematron--write-rnc out rnc)
                          (dolist (b (buffer-list))
-                           (with-current-buffer b
-                             (when (or (memq b waiting)
-                                       (equal py-schematron--nxml-rnc rnc))
-                               (py-schematron--nxml-apply rnc t)
-                               (when (equal py-schematron--nxml-rnc rnc)
-                                 (setq n (1+ n))))))
+                           (when (buffer-live-p b)
+                             (with-current-buffer b
+                               (when (or (memq b waiting)
+                                         (equal py-schematron--nxml-rnc rnc))
+                                 (py-schematron--nxml-apply rnc t)
+                                 (when (equal py-schematron--nxml-rnc rnc)
+                                   (setq n (1+ n)))))))
                          (when announce
                            (message "py-schematron: nxml's schema recreated from %s (%d buffer%s)"
                                     (file-name-nondirectory rng) n (if (= n 1) "" "s"))))
@@ -1225,9 +1226,12 @@ in the kill ring, to paste into your init file."
               (setq trusted-content (append trusted-content (list entry))))
             (kill-new line)
             (dolist (b (buffer-list))
-              (with-current-buffer b
-                (when (and py-schematron-mode (trusted-content-p))
-                  (py-schematron--start-check))))
+              ;; (starting a check may kill buffers further on in the list,
+              ;; such as those of the check it cancels)
+              (when (buffer-live-p b)
+                (with-current-buffer b
+                  (when (and py-schematron-mode (trusted-content-p))
+                    (py-schematron--start-check)))))
             (message "py-schematron: trusted %s for this session; to keep it, paste into your init file (it is in the kill ring): %s"
                      entry line)))))))
 
@@ -1300,7 +1304,7 @@ it; the report then ends with a note that live checking is off."
                                   (expand-file-name py-schematron-schema)))
                        (list "-v" file))))
     (with-current-buffer
-        (let ((coding-system-for-read 'utf-8-unix))      ; (see `py-schematron--start')
+        (let ((coding-system-for-read 'utf-8))      ; (see `py-schematron--start')
           (compilation-start
            (mapconcat #'shell-quote-argument
                       (append (list (or (py-schematron--program (py-schematron--python))
@@ -1374,7 +1378,7 @@ Also says which checker, Flycheck or Flymake, is used."
           (say nil (format "Python: \"%s\" not found.  Run py-schematron's installer, or set `py-schematron-python'."
                            (py-schematron--python)))
         (let ((probe (with-temp-buffer
-                       (cons (let ((coding-system-for-read 'utf-8-unix))
+                       (cons (let ((coding-system-for-read 'utf-8))
                                (call-process python nil t nil "-c"
                                            "import sys; print(sys.version.split()[0]); import saxonche, lxml"))
                              (string-trim (buffer-string))))))
@@ -1457,7 +1461,7 @@ Below, what the package's py-schematron.py says of itself (its
            ((not (file-readable-p script))
             (format "(py-schematron.py was not found: %s)" script))
            (t (with-temp-buffer
-                (let ((code (let ((coding-system-for-read 'utf-8-unix))
+                (let ((code (let ((coding-system-for-read 'utf-8))
                               (call-process python nil t nil script "--about"))))
                   (if (eq code 0)
                       (string-trim (buffer-string))

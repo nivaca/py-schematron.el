@@ -8,6 +8,16 @@ zip files, are on
 [py-schematron](https://codeberg.org/nivaca/py-schematron/releases), as
 `emacs-vVERSION`.
 
+## 0.9.3 — 2026-11-19 (py-schematron.py 2.2)
+
+- `M-x py-schematron-trust-file` could stop with "Selecting deleted
+  buffer": starting the checks of the buffers it trusts can kill other
+  buffers on the way, those of a cancelled check. It now skips them; so
+  does the reloading of nxml's schema after a conversion.
+- On Windows, the program's lines end with CR LF; the package now reads
+  its output with the line ends detected, so the About buffer, for one,
+  shows no stray `^M`.
+
 ## 0.9.2 — 2026-11-19 (py-schematron.py 2.2)
 
 - **Accented letters on Windows.** The package read the program's output
