@@ -24,6 +24,12 @@
 
 ;;; Code:
 
+(require 'jka-compr)   ; (its temporary-file template is set on loading: not inside a test)
+
+(defconst pyxv-test--word-pattern "(\\p{L}|\\p{N}|\\p{P}|\\p{S})+"
+  "TEI's pattern for teidata.word, as trang writes it.")
+
+
 (require 'ert)
 (require 'cl-lib)
 (require 'lisp-mnt)
@@ -670,9 +676,10 @@ Flymake's own warnings are left out."
                (rnc (pyxv-test--nxml-ready cache)))
           (should (string-suffix-p "-schema.rnc" rnc))
           (should (equal py-xmlvalidate--nxml-rnc rnc))
-          ;; the TEI word pattern was widened for nxml
-          (should (string-search py-xmlvalidate--word-pattern-for-nxml
+          ;; nxml's copy is trang's, with TEI's word pattern unchanged
+          (should (string-search pyxv-test--word-pattern
                                  (with-temp-buffer (insert-file-contents rnc) (buffer-string))))
+          (should (advice-member-p #'py-xmlvalidate--xsdre-copy-ranges 'xsdre-range-list-union))
           ;; nothing was written next to the document
           (should-not (file-exists-p (expand-file-name "schemas.xml" pyxv-test--dir)))
           ;; completion: inside TEI, p is offered
@@ -739,24 +746,36 @@ Flymake's own warnings are left out."
         (should (string-match-p "trang not found"
                                 (with-current-buffer "*Messages*" (buffer-string))))))))
 
-(ert-deftest pyxv-write-rnc ()
-  "The compact schema given to nxml has the TEI word pattern widened."
-  (let* ((dir (make-temp-file "pyxv-rnc-" t))
-         (from (expand-file-name "in.rnc" dir))
-         (to (expand-file-name "out.rnc" dir)))
+(declare-function xsdre-translate "xsd-regexp" (regexp))
+
+(ert-deftest pyxv-xsdre-fix ()
+  "nxml's \\p{P} keeps # % ! @ ¿ however often it is used, also after
+damage done before the fix, which reloading xsd-regexp undoes."
+  (require 'xsd-regexp)
+  (let ((matches (lambda (pattern s)
+                   (string-match-p (concat "\\`" (xsdre-translate pattern) "\\'") s))))
     (unwind-protect
         (progn
-          (with-temp-file from
-            (insert "a = xsd:token { pattern = \"" py-xmlvalidate--word-pattern "\" }\n"
-                    "b = xsd:token { pattern = \"" py-xmlvalidate--word-pattern "\" }\n"))
-          (py-xmlvalidate--write-rnc from to)
-          (let ((text (with-temp-buffer (insert-file-contents to) (buffer-string))))
-            (should (= 2 (let ((n 0) (i 0))
-                           (while (setq i (string-search py-xmlvalidate--word-pattern-for-nxml text i))
-                             (setq n (1+ n) i (1+ i)))
-                           n)))
-            (should-not (string-search (concat "\"" py-xmlvalidate--word-pattern "\"") text))))
-      (delete-directory dir t))))
+          ;; without the fix, a second translation of \p{P} has lost #
+          (advice-remove 'xsdre-range-list-union #'py-xmlvalidate--xsdre-copy-ranges)
+          (load "xsd-regexp" nil t)
+          (funcall matches "\\p{P}" "#")
+          (should-not (funcall matches "\\p{P}" "#"))
+          ;; the fix restores the tables and keeps them whole
+          (py-xmlvalidate--fix-xsdre)
+          (dotimes (_ 3)
+            (dolist (c '("#" "%" "!" "@" "¿" "-"))
+              (should (funcall matches "\\p{P}" c))))
+          (should (funcall matches pyxv-test--word-pattern "#U2"))
+          (should (funcall matches "[^\\p{C}\\p{Z}]+" "#U2"))
+          (should (funcall matches "\\w+" "abc"))
+          ;; unloading takes the advice away
+          (py-xmlvalidate-unload-function)
+          (should-not (advice-member-p #'py-xmlvalidate--xsdre-copy-ranges
+                                       'xsdre-range-list-union)))
+      ;; leave the other tests a mended nxml
+      (advice-remove 'xsdre-range-list-union #'py-xmlvalidate--xsdre-copy-ranges)
+      (py-xmlvalidate--fix-xsdre))))
 
 ;;;; Recreating the schema for nxml
 
@@ -796,7 +815,7 @@ Flymake's own warnings are left out."
                          "the other buffer to reload" 60)
         (with-current-buffer a (should (member "p" (pyxv-test--offered "<TEI"))))
         (should-not (string-search "element q " (with-temp-buffer (insert-file-contents rnc) (buffer-string))))
-        (should (string-search py-xmlvalidate--word-pattern-for-nxml
+        (should (string-search pyxv-test--word-pattern
                                (with-temp-buffer (insert-file-contents rnc) (buffer-string))))
         (should (string-match-p "nxml.s schema recreated from schema.rng (2 buffers)"
                                 (with-current-buffer "*Messages*" (buffer-string))))

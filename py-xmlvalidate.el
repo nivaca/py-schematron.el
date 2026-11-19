@@ -4,7 +4,7 @@
 ;; Copyright (C) 2026 Nicolas Vaughan <nicolasvaughan@proton.me>
 
 ;; Author: Nicolas Vaughan <nicolasvaughan@proton.me>
-;; Version: 0.5.0
+;; Version: 0.5.1
 ;; Package-Requires: ((emacs "31.1"))
 ;; Keywords: languages, xml, tools
 ;; URL: https://codeberg.org/nivaca/py-xmlvalidate-emacs
@@ -652,17 +652,40 @@ with py-xmlvalidate.py and jing.  See `py-xmlvalidate-mode'."
 (defvar py-xmlvalidate--trang-warned nil
   "Whether the missing trang has already been reported.")
 
-(defconst py-xmlvalidate--word-pattern "(\\p{L}|\\p{N}|\\p{P}|\\p{S})+"
-  "TEI's pattern for teidata.word, as it appears in the compact schema.")
+(defun py-xmlvalidate--xsdre-copy-ranges (args)
+  "Copy the range lists that nxml's `xsdre-range-list-union' gets in ARGS.
+That function joins them with `append', which does not copy the last
+one, and then sorts and shortens the result in place.  So the cached
+ranges of the last category of a union (Po in \\p{P}, So in \\p{S},
+Cn in \\p{C}, and through them \\w) lose characters each time a
+pattern uses it, and nxml soon rejects # % ! @ ¿ and more in values
+the schema allows, like ed=\"#U2\" in TEI's teidata.word.  With
+copies the tables stay whole; once Emacs copies them itself, this
+changes nothing."
+  (list (mapcar #'copy-sequence (car args))))
 
-(defconst py-xmlvalidate--word-pattern-for-nxml
-  "(\\p{L}|\\p{N}|\\p{P}|\\p{S}|[!-/:-@\\[-`{-~¡-¿×÷])+"
-  "The pattern given to nxml instead of `py-xmlvalidate--word-pattern'.
-nxml's tables for \\p{P} and \\p{S} leave out ASCII and Latin-1
-punctuation and symbols such as # % ! @ §, so it would reject
-values like ed=\"#U2\" that the schema allows.  The explicit ranges
-make nxml's copy a little more permissive than the schema, never
-stricter; the full check is still jing's.")
+(defun py-xmlvalidate--fix-xsdre ()
+  "Mend nxml's regexps of Unicode categories.
+See `py-xmlvalidate--xsdre-copy-ranges'.  Done when this package
+first gives nxml a schema, not on loading.  Tables already damaged in
+this session are restored by loading xsd-regexp's source again, which
+holds them.  (Its source: a compiled file, natively compiled above all,
+may give back the same, damaged, lists.)"
+  (unless (advice-member-p #'py-xmlvalidate--xsdre-copy-ranges 'xsdre-range-list-union)
+    (advice-add 'xsdre-range-list-union :filter-args #'py-xmlvalidate--xsdre-copy-ranges)
+    (when (featurep 'xsd-regexp)
+      (condition-case err
+          (unless (let ((inhibit-message t) (message-log-max nil))   ; ("uncompressing...")
+                    (load "xsd-regexp.el" t t))
+            (py-xmlvalidate--log "nxml's xsd-regexp.el was not found, so tables damaged \
+before this package mended nxml stay so until Emacs restarts"))
+        (error (py-xmlvalidate--log (format "xsd-regexp.el could not be loaded again: %s"
+                                            (error-message-string err))))))))
+
+(defun py-xmlvalidate-unload-function ()
+  "Undo `py-xmlvalidate--fix-xsdre' when the package is unloaded."
+  (advice-remove 'xsdre-range-list-union #'py-xmlvalidate--xsdre-copy-ranges)
+  nil)
 
 (defun py-xmlvalidate--rnc-file (rng)
   "Where the compact version of the schema RNG is kept."
@@ -724,6 +747,7 @@ revalidates by itself when the schema changes."
              (or reload (not (equal rng-current-schema-file-name rnc))))
     (condition-case err
         (progn
+          (py-xmlvalidate--fix-xsdre)
           (rng-set-schema-file-1 rnc)
           (setq py-xmlvalidate--nxml-rnc rnc))
       (error
@@ -781,12 +805,9 @@ copy.  With ANNOUNCE, say so when it is done."
            (py-xmlvalidate--log (format "trang could not be run: %s" (error-message-string e)))))))))
 
 (defun py-xmlvalidate--write-rnc (from to)
-  "Copy the compact schema FROM to TO, adapted for nxml, atomically."
+  "Copy the compact schema FROM to TO, atomically."
   (let ((text (with-temp-buffer
                 (insert-file-contents from)
-                (goto-char (point-min))
-                (while (search-forward py-xmlvalidate--word-pattern nil t)
-                  (replace-match py-xmlvalidate--word-pattern-for-nxml t t))
                 (buffer-string)))
         (tmp (make-temp-file (expand-file-name ".tmp-" (file-name-directory to)) nil ".rnc")))
     (with-temp-file tmp

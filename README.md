@@ -214,13 +214,17 @@ document's schema again, with a new check, and reloads it in every buffer
 that uses it. Use it if the cached copy seems wrong, or after changing
 `py-xmlvalidate-trang`.
 
-One adjustment is made in nxml's copy of the schema. nxml's tables for the
-Unicode categories `\p{P}` and `\p{S}` leave out ASCII and Latin-1
-punctuation and symbols such as `#`, `%`, `!`, `@` and `§`, so it rejects
-values that the schema allows, like `ed="#U2"` in TEI's `teidata.word`. In
-the copy for nxml, that pattern also accepts those characters explicitly.
-nxml's copy is thus a little more permissive than the schema, never
-stricter; the full check is still jing's, in the checker's list.
+The package mends a bug in nxml's regular expressions. When nxml builds a
+Unicode category from its parts (`\p{P}` from `Pc`, `Pd` … `Po`), it
+damages its cached table of the last part, so after the first pattern that
+uses `\p{P}`, `\p{S}` or `\p{C}`, nxml rejects `#`, `%`, `!`, `@`, `¿`
+and more in values the schema allows, like `ed="#U2"` in TEI's
+`teidata.word`. The first time the package gives nxml a schema, it makes
+nxml copy those tables before using them (an advice on
+`xsdre-range-list-union`), and reloads them if they were already damaged.
+Nothing else in nxml changes, and unloading the package removes the
+advice. Versions before 0.5.1 widened TEI's word pattern in nxml's copy
+instead, which fixed only that pattern.
 
 The converter is `py-xmlvalidate-trang`: `"trang"` (what
 `tools/install-trang.py` installs), or a command line as a list, for

@@ -8,6 +8,24 @@ zip files, are on
 [py-xmlvalidate](https://codeberg.org/nivaca/py-xmlvalidate/releases), as
 `emacs-vVERSION`.
 
+## 0.5.1 — 2026-11-18 (py-xmlvalidate.py 1.20)
+
+- **nxml's punctuation bug is mended at its cause.** nxml rejected `#`,
+  `%`, `!`, `@`, `¿` and more in values the schema allows because building
+  `\p{P}` (or `\p{S}`, `\p{C}`) damages nxml's cached table of the last
+  category in it: `xsdre-range-list-union` merges the lists in place, and
+  `append` does not copy the last one. The package now has nxml copy them
+  first (an advice, put in the first time it gives nxml a schema, and
+  removed on unloading), instead of widening TEI's word pattern in nxml's
+  copy of the schema, which fixed that pattern only. nxml's copy is now
+  exactly what trang makes.
+- Carries py-xmlvalidate.py 1.20, whose `-o` finds the TEI Stylesheets
+  through `--stylesheets`, `TEI_STYLESHEETS` or ODD2RNG's configuration.
+  `M-x py-xmlvalidate-about` shows which folder it uses.
+- The tests run on GitHub at every push (byte-compiling with warnings as
+  errors, then the ERT tests with Flycheck, jing and trang), and
+  `tools/release.py` makes a release in one command.
+
 ## 0.5.0 — 2026-11-18 (py-xmlvalidate.py 1.19)
 
 - `M-x py-xmlvalidate-about` shows what the package is: its version, author,

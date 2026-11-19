@@ -69,7 +69,7 @@ if sys.version_info < (3, 15):
 from lxml import etree
 from saxonche import PySaxonProcessor
 
-__version__ = "1.19"
+__version__ = "1.20"
 
 SCH_NS = 'http://purl.oclc.org/dsdl/schematron'
 S = f'{{{SCH_NS}}}'
@@ -142,17 +142,68 @@ def cache_al_dia(fuente: Path, derivado: Path) -> bool:
 
 # ---------------------------------------------------------------- fuentes
 
+# Carpeta de las TEI Stylesheets para -o (la opción --stylesheets la fija)
+HOJAS_TEI = None
+
+
+def config_odd2rng() -> Path:
+    """El config.toml de ODD2RNG (odd2rng.py), que también dice dónde están
+    las TEI Stylesheets: $ODD2RNG_CONFIG, o la carpeta de ajustes habitual."""
+    if os.environ.get('ODD2RNG_CONFIG'):
+        base = Path(os.environ['ODD2RNG_CONFIG']).expanduser()
+    elif sys.platform == 'win32':
+        base = Path(os.environ.get('APPDATA') or Path.home() / 'AppData' / 'Roaming') / 'odd2rng'
+    elif sys.platform == 'darwin':
+        base = Path.home() / 'Library' / 'Application Support' / 'odd2rng'
+    else:
+        base = Path(os.environ.get('XDG_CONFIG_HOME') or Path.home() / '.config') / 'odd2rng'
+    return base / 'config.toml'
+
+
+def hojas_tei():
+    """(carpeta, de dónde) de las TEI Stylesheets para -o, o (None, motivo).
+    En este orden: --stylesheets, la variable TEI_STYLESHEETS, el ajuste
+    `stylesheets` del config.toml de ODD2RNG (una ruta relativa se toma desde
+    su carpeta), y por último odds/ y common/ junto a este script."""
+    candidatas = []
+    if HOJAS_TEI:
+        candidatas.append((Path(HOJAS_TEI).expanduser(), '--stylesheets'))
+    if os.environ.get('TEI_STYLESHEETS'):
+        candidatas.append((Path(os.environ['TEI_STYLESHEETS']).expanduser(), 'TEI_STYLESHEETS'))
+    conf = config_odd2rng()
+    if conf.is_file():
+        try:
+            import tomllib
+            with open(conf, 'rb') as f:
+                valor = tomllib.load(f).get('stylesheets')
+            if isinstance(valor, str) and valor:
+                d = Path(valor).expanduser()
+                candidatas.append((d if d.is_absolute() else conf.parent / d, str(conf)))
+        except Exception as e:
+            avisar_una_vez('odd2rng-config', f'no pude leer {conf}: {e}')
+    candidatas.append((HERE, 'junto al script'))
+    for carpeta, origen in candidatas:
+        if (carpeta / 'odds' / 'extract-isosch.xsl').is_file():
+            return carpeta.resolve(), origen
+        if origen != 'junto al script':     # (una indicación explícita que falla)
+            return None, f'{carpeta} ({origen}) no tiene odds/extract-isosch.xsl'
+    return None, 'ni --stylesheets, ni TEI_STYLESHEETS, ni el config.toml de ODD2RNG, ni odds/ junto al script'
+
+
 def extraer_sch(odd: Path, proc: PySaxonProcessor) -> Path:
     """ODD -> .sch con extract-isosch.xsl, cacheado por mtime."""
     exigir_archivo(odd, 'el ODD')
     sch = odd.with_suffix('.sch')
     if cache_al_dia(odd, sch):
         return sch
-    xsl = HERE / 'odds' / 'extract-isosch.xsl'
-    if not xsl.is_file():
-        morir(f"No encuentro {xsl}; descarga extract-isosch.xsl y "
-              f"common/functions.xsl de TEIC/Stylesheets junto al script "
+    carpeta, origen = hojas_tei()
+    if carpeta is None:
+        morir(f"No encuentro las TEI Stylesheets para extraer el Schematron del "
+              f"ODD: {origen}. Indica su carpeta (un clon de TEIC/Stylesheets) con "
+              f"--stylesheets o TEI_STYLESHEETS, o en el config.toml de ODD2RNG "
               f"(véase README §2).")
+    xsl = carpeta / 'odds' / 'extract-isosch.xsl'
+    print(f"[extracción] con las TEI Stylesheets de {carpeta} ({origen})", file=sys.stderr)
     exe = proc.new_xslt30_processor().compile_stylesheet(stylesheet_file=str(xsl))
     try:
         out = exe.transform_to_string(source_file=str(odd))
@@ -681,8 +732,7 @@ def acerca() -> str:
             saxon = proc.version
     except Exception as e:                        # (no debería pasar)
         saxon = f'no disponible ({e})'
-    xsl = (HERE / 'odds' / 'extract-isosch.xsl').is_file() and \
-        (HERE / 'common' / 'functions.xsl').is_file()
+    carpeta, origen = hojas_tei()
     lxml_v = '.'.join(map(str, etree.LXML_VERSION[:3]))
     libxml2 = '.'.join(map(str, etree.LIBXML_VERSION))
     return f"""py-xmlvalidate.py {__version__}
@@ -702,7 +752,7 @@ Python:        {sys.version.split()[0]} ({sys.executable})
 saxonche:      {de('saxonche')} ({saxon})
 lxml:          {lxml_v} (libxml2 {libxml2})
 Caché:         {HERE / '.schema-cache'}
-Hojas de estilo de TEI para -o: {'presentes' if xsl else 'ausentes'} (odds/ y common/ junto al script)"""
+TEI Stylesheets para -o: {f'{carpeta} ({origen})' if carpeta else f'no encontradas: {origen}'}"""
 
 
 class Acerca(argparse.Action):
@@ -712,6 +762,8 @@ class Acerca(argparse.Action):
         super().__init__(option_strings, dest, nargs=0, **kwargs)
 
     def __call__(self, parser, namespace, values, option_string=None):
+        global HOJAS_TEI
+        HOJAS_TEI = getattr(namespace, 'stylesheets', None) or HOJAS_TEI
         print(acerca())
         parser.exit()
 
@@ -721,6 +773,10 @@ def main():
         description='Validación Schematron de documentos TEI desde el terminal')
     ap.add_argument('--version', action='version',
                     version=f'%(prog)s {__version__}')
+    ap.add_argument('--stylesheets', metavar='CARPETA',
+                    help='las TEI Stylesheets para -o (un clon de TEIC/Stylesheets); '
+                         'si no, TEI_STYLESHEETS, el config.toml de ODD2RNG, u '
+                         'odds/ y common/ junto al script')
     ap.add_argument('--about', action=Acerca,
                     help='qué es este programa, de quién, con qué licencia y '
                          'dónde está, y con qué Python y bibliotecas corre')
@@ -750,6 +806,8 @@ def main():
                          'usa para validar el texto sin guardar a partir de '
                          'una copia temporal')
     args = ap.parse_args()
+    global HOJAS_TEI
+    HOJAS_TEI = args.stylesheets
     if args.como and len(args.docs) != 1:
         ap.error('--as requiere exactamente un documento')
     base = args.como.resolve().parent if args.como else None
