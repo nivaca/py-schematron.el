@@ -30,7 +30,7 @@ DIST = os.path.join(HERE, "dist")
 NAME = "py-xmlvalidate-emacs"
 
 #  What is in the repository but not part of the program
-NOT_PART = ("tools/bundle-zip.py", "tools/release.py", "upstream/")
+NOT_PART = ("tools/bundle-zip.py", "tools/release.py")
 
 
 def version() -> str:

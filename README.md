@@ -237,8 +237,7 @@ XSD code, and mended only if it is there, so an Emacs where it is fixed
 is left alone. `M-x py-xmlvalidate-about` says what was mended, and
 `py-xmlvalidate-fix-nxml` set to nil turns all this off. Unloading the
 package removes its advice. On 200 TEI editions, nxml mended in this way
-agrees with jing on every document. The bugs are described for Emacs's
-bug tracker in `upstream/`.
+agrees with jing on every document.
 
 The converter is `py-xmlvalidate-trang`: `"trang"` (what
 `tools/install-trang.py` installs), or a command line as a list, for

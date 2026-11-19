@@ -711,7 +711,7 @@ with py-xmlvalidate.py and jing.  See `py-xmlvalidate-mode'."
 ;; nxml (Emacs 31 and earlier) has bugs in its XSD datatypes that make it
 ;; reject valid values in TEI and other schemas.  Each is checked for in
 ;; the running Emacs, and mended only there, so that an Emacs where it is
-;; fixed is left alone.  The bug reports for Emacs are in upstream/.
+;; fixed is left alone.
 
 (defcustom py-xmlvalidate-fix-nxml t
   "Whether to mend nxml's XSD datatypes where the running Emacs needs it.
