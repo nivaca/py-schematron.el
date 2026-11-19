@@ -221,10 +221,13 @@ and in the folder above (the layout before 0.3.0)."
          (delete-directory pysch-test--dir t)))))
 
 (defun pysch-test--wait (pred what &optional secs)
-  "Wait until PRED returns non-nil, at most SECS seconds; WHAT for errors."
+  "Wait until PRED returns non-nil, at most SECS seconds.
+WHAT names what is awaited, for the error: a string, or a function that
+returns one (called only on time-out)."
   (let ((end (+ (float-time) (or secs 60))))
     (while (not (funcall pred))
-      (when (> (float-time) end) (error "Timed out waiting for %s" what))
+      (when (> (float-time) end)
+        (error "Timed out waiting for %s" (if (functionp what) (funcall what) what)))
       (accept-process-output nil 0.05))))
 
 (defun pysch-test--check ()
@@ -556,6 +559,8 @@ Flymake's own warnings are left out."
                     :name "pysch-server" :buffer (generate-new-buffer " *pysch-server*")
                     :command (list py-schematron-python "-u" "-m" "http.server" "0"
                                    "--bind" "127.0.0.1" "--directory" served)
+                    ;; (a pipe: a pseudo-terminal may hold the output back on macOS)
+                    :connection-type 'pipe
                     :noquery t))
       (unwind-protect
           (progn
@@ -563,7 +568,10 @@ Flymake's own warnings are left out."
                                           (goto-char (point-min))
                                           (when (re-search-forward "port \\([0-9]+\\)" nil t)
                                             (setq port (match-string 1)))))
-                             "the HTTP server" 20)
+                             (lambda ()
+                               (format "the HTTP server (it said: %S)"
+                                       (with-current-buffer (process-buffer server) (buffer-string))))
+                             60)
             (pysch-test--write "remote.xml"
                               (concat (replace-regexp-in-string
                                        "schema\\.rng" (format "http://127.0.0.1:%s/remote.rng" port)

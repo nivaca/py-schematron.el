@@ -38,11 +38,23 @@ jobs:
         with:
           version: "31.1"
 
+      # GNU's own Windows build (setup actions look for the wrong file name:
+      # this release is "31.1_1"), checked against GNU's SHA-256 sums
       - name: Emacs (Windows)
         if: runner.os == 'Windows'
-        uses: jcs090218/setup-emacs-windows@master
-        with:
-          version: "31.1"
+        shell: pwsh
+        run: |
+          $base = "https://ftp.gnu.org/gnu/emacs/windows/emacs-31"
+          $zip = "emacs-31.1_1.zip"
+          Invoke-WebRequest "$base/$zip" -OutFile "$env:RUNNER_TEMP\$zip"
+          Invoke-WebRequest "$base/emacs-31.1_1-sha256sums.txt" -OutFile "$env:RUNNER_TEMP\sums.txt"
+          $expected = ((Select-String -Path "$env:RUNNER_TEMP\sums.txt" -Pattern "[ *]$([regex]::Escape($zip))$").Line -split "\s+")[0]
+          $actual = (Get-FileHash "$env:RUNNER_TEMP\$zip" -Algorithm SHA256).Hash.ToLower()
+          if (-not $expected -or $actual -ne $expected) { Write-Host "checksum: expected $expected, got $actual"; exit 1 }
+          Expand-Archive "$env:RUNNER_TEMP\$zip" -DestinationPath "$env:RUNNER_TEMP\emacs"
+          $exe = Get-ChildItem "$env:RUNNER_TEMP\emacs" -Recurse -Filter emacs.exe | Select-Object -First 1
+          $exe.DirectoryName | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          & $exe.FullName --version | Select-Object -First 1
 
       - uses: actions/setup-python@v5
         with:
