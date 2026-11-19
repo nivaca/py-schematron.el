@@ -753,7 +753,9 @@ with py-schematron.py and jing.  See `py-schematron-mode'."
 ;; nxml (Emacs 31 and earlier) has bugs in its XSD datatypes that make it
 ;; reject valid values in TEI and other schemas.  Each is checked for in
 ;; the running Emacs, and mended only there, so that an Emacs where it is
-;; fixed is left alone.
+;; fixed is left alone.  Reported to Emacs as bug#82281 (damaged
+;; category tables), bug#82282 (Unicode 3.1 categories), bug#82283 (class
+;; subtraction, not mended here) and bug#82284 (collapsed whitespace).
 
 (defcustom py-schematron-fix-nxml t
   "Whether to mend nxml's XSD datatypes where the running Emacs needs it.
@@ -780,7 +782,7 @@ ranges of the last category of a union (Po in \\p{P}, So in \\p{S},
 Cn in \\p{C}, and through them \\w) lose characters each time a
 pattern uses it, and nxml soon rejects # % ! @ ¿ and more in values
 the schema allows, like ed=\"#U2\" in TEI's teidata.word.  With
-copies the tables stay whole."
+copies the tables stay whole.  Emacs bug#82281."
   (list (mapcar #'copy-sequence (car args))))
 
 (declare-function xsdre-range-list-union "xsd-regexp" (range-lists))
@@ -809,7 +811,7 @@ tables.  Loads xsd-regexp."
   (seq-some (lambda (r) (<= (xsdre-range-first r) char (xsdre-range-last r))) ranges))
 
 (defun py-schematron--xsdre-old-unicode-p ()
-  "Whether nxml's Unicode categories are its old ones.
+  "Whether nxml's Unicode categories are its old ones (Emacs bug#82282).
 That is, whether the letter U+A751 (Unicode 5.1) is missing from Ll,
 or the characters nxml's regexps can match stop short of U+10FFFF."
   (require 'xsd-regexp)
@@ -862,7 +864,8 @@ of times."
 
 (defun py-schematron--trim-collapsed (args)
   "Remove the spaces at either end of the string in ARGS.
-For nxml's `rng-xsd-collapse-space', which keeps one at either end."
+For nxml's `rng-xsd-collapse-space', which keeps one at either end
+\(Emacs bug#82284)."
   (cons (string-trim (car args) "[ \t\n\r]+" "[ \t\n\r]+") (cdr args)))
 
 (declare-function rng-xsd-collapse-space "rng-xsd" (str convert &rest args))

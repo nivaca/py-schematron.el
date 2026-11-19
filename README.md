@@ -253,7 +253,13 @@ XSD code, and mended only if it is there, so an Emacs where it is fixed
 is left alone. `M-x py-schematron-about` says what was mended, and
 `py-schematron-fix-nxml` set to nil turns all this off. Unloading the
 package removes its advice. On 200 TEI editions, nxml mended in this way
-agrees with jing on every document.
+agrees with jing on every document. The bugs are reported to Emacs as
+[bug#82281](https://debbugs.gnu.org/82281) (the damaged tables),
+[bug#82282](https://debbugs.gnu.org/82282) (the old categories) and
+[bug#82284](https://debbugs.gnu.org/82284) (the whitespace); a fourth,
+[bug#82283](https://debbugs.gnu.org/82283), a class subtraction such as
+`[a-z-[aeiou]]` that nxml refuses and then lets anything through, is not
+mended here, since TEI schemas do not use it.
 
 The converter is `py-schematron-trang`: `"trang"` (what
 `tools/install-trang.py` installs), or a command line as a list, for
