@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""py-xmlvalidate.py — Validación Schematron de documentos TEI desde el terminal.
+"""py-schematron.py — Validación Schematron de documentos TEI desde el terminal.
 
 Uso:
-    python3 py-xmlvalidate.py (-o ODD | -s SCH | -r RNG) [-v] [--max N] DOC.xml [...]
+    python3 py-schematron.py (-o ODD | -s SCH | -r RNG) [-v] [--max N] DOC.xml [...]
 
 Tres fuentes de reglas, mutuamente excluyentes:
   -o/--odd  ODD con Schematron embebido (p. ej. smed-schema.xml): se extrae
@@ -62,14 +62,14 @@ from pathlib import Path
 # importar lxml y saxonche, para que con un Python más antiguo el mensaje
 # sea claro: error de entorno, código 3 (la extensión de VS Code lo muestra).
 if sys.version_info < (3, 15):
-    print(f"py-xmlvalidate.py necesita Python 3.15 o posterior; este es Python "
+    print(f"py-schematron.py necesita Python 3.15 o posterior; este es Python "
           f"{sys.version.split()[0]}.", file=sys.stderr)
     sys.exit(3)
 
 from lxml import etree
 from saxonche import PySaxonProcessor
 
-__version__ = "1.21"
+__version__ = "2.0"
 
 SCH_NS = 'http://purl.oclc.org/dsdl/schematron'
 S = f'{{{SCH_NS}}}'
@@ -798,17 +798,17 @@ def acerca() -> str:
     carpeta, origen = hojas_tei()
     lxml_v = '.'.join(map(str, etree.LXML_VERSION[:3]))
     libxml2 = '.'.join(map(str, etree.LIBXML_VERSION))
-    return f"""py-xmlvalidate.py {__version__}
+    return f"""py-schematron.py {__version__}
 Validación ISO Schematron de documentos XML/TEI con Saxon (XPath 3.1): las
 reglas de un ODD, de un .sch o de un RelaxNG con reglas embebidas, con el
 esquema detectado por <?xml-model?>, como en oXygen.
 
 Autor:         Nicolas Vaughan <nicolasvaughan@proton.me>
 Licencia:      GNU General Public License, versión 3 o posterior
-Código:        https://codeberg.org/nivaca/py-xmlvalidate
-               https://github.com/nivaca/py-xmlvalidate
-Complementos:  https://codeberg.org/nivaca/py-xmlvalidate-vscode (VS Code)
-               https://codeberg.org/nivaca/py-xmlvalidate-emacs (Emacs)
+Código:        https://codeberg.org/nivaca/py-schematron
+               https://github.com/nivaca/py-schematron
+Complementos:  https://codeberg.org/nivaca/py-schematron-vscode (VS Code)
+               https://codeberg.org/nivaca/py-schematron.el (Emacs)
 
 Este script:   {Path(__file__).resolve()}
 Python:        {sys.version.split()[0]} ({sys.executable})

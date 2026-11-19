@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Nicolas Vaughan <nicolasvaughan@proton.me>
-# This file is part of py-xmlvalidate. See the LICENSE file for details.
+# This file is part of py-schematron. See the LICENSE file for details.
 """Release the current version: python3 tools/release.py [--dry-run]
 [--yes] [--skip-tests] [--notes FILE]
 
-The same script serves four repositories (py-xmlvalidate; the plugins
-py-xmlvalidate-emacs and py-xmlvalidate-vscode, which get their copy from
+The same script serves four repositories (py-schematron; the plugins
+py-schematron.el and py-schematron-vscode, which get their copy from
 tools/sync-plugins.py; and ODD2RNG, whose copy is made by hand) and works
 out which one it is in:
 
-  py-xmlvalidate         version: __version__ of py-xmlvalidate.py
+  py-schematron         version: __version__ of py-schematron.py
                          notes:   its row in the version history of README.md
-                         file:    dist/py-xmlvalidate-v.VERSION.zip (tools/bundle-zip.py)
-  py-xmlvalidate-emacs   version: the Version header of py-xmlvalidate.el
+                         file:    dist/py-schematron-v.VERSION.zip (tools/bundle-zip.py)
+  py-schematron.el   version: the Version header of py-schematron.el
                          notes:   its section of CHANGELOG.md
-                         file:    dist/py-xmlvalidate-emacs-v.VERSION.zip (tools/bundle-zip.py)
-  py-xmlvalidate-vscode  version: package.json
+                         file:    dist/py-schematron.el-v.VERSION.zip (tools/bundle-zip.py)
+  py-schematron-vscode  version: package.json
                          notes:   its section of CHANGELOG.md
                          file:    dist/validate-schematron-VERSION.vsix (npm run package)
   ODD2RNG                version: __version__ of odd2rng.py
@@ -27,7 +27,7 @@ The tag is vVERSION.  In order, the script:
 
   1. checks: on main, nothing uncommitted, a tag that is new or already on
      this commit, release notes found, and (in a plugin) a copy of
-     py-xmlvalidate.py that is the same as ../py-xmlvalidate's;
+     py-schematron.py that is the same as ../py-schematron's;
   2. runs the tests (the unittest suites of the programs, the Emacs
      package's ERT tests, the extension's unit tests);
   3. makes the file;
@@ -110,17 +110,17 @@ def readme_notes(version: str) -> str | None:
 
 
 class Program:
-    repo = "py-xmlvalidate"
+    repo = "py-schematron"
 
     def version(self):
-        m = re.search(r'^__version__\s*=\s*"([^"]+)"', read("py-xmlvalidate.py"), re.M)
+        m = re.search(r'^__version__\s*=\s*"([^"]+)"', read("py-schematron.py"), re.M)
         return m.group(1) if m else None
 
     def notes(self, version):
         return readme_notes(version)
 
     def asset(self, version):
-        return ROOT / "dist" / f"py-xmlvalidate-v.{version}.zip"
+        return ROOT / "dist" / f"py-schematron-v.{version}.zip"
 
     def footer(self, name):
         return (f"File: `{name}`, the scripts, the tests and the documentation.")
@@ -133,21 +133,21 @@ class Program:
 
 
 class Emacs:
-    repo = "py-xmlvalidate-emacs"
+    repo = "py-schematron.el"
 
     def version(self):
-        m = re.search(r"^;; Version: (\S+)", read("py-xmlvalidate.el"), re.M)
+        m = re.search(r"^;; Version: (\S+)", read("py-schematron.el"), re.M)
         return m.group(1) if m else None
 
     def notes(self, version):
         return changelog_notes(version)
 
     def asset(self, version):
-        return ROOT / "dist" / f"py-xmlvalidate-emacs-v.{version}.zip"
+        return ROOT / "dist" / f"py-schematron.el-v.{version}.zip"
 
     def footer(self, name):
-        return ("With Straight: `M-x straight-pull-package RET py-xmlvalidate`, then restart "
-                f"Emacs.\n\nFile: `{name}`, the package, its copy of py-xmlvalidate.py, the "
+        return ("With Straight: `M-x straight-pull-package RET py-schematron`, then restart "
+                f"Emacs.\n\nFile: `{name}`, the package, its copy of py-schematron.py, the "
                 "README, the changelog, the tests and the trang installer.")
 
     @staticmethod
@@ -174,17 +174,17 @@ class Emacs:
                 return os.environ[var]
             found = shutil.which(name) or (Path.home() / "bin" / name)
             return str(found) if Path(found).is_file() else None
-        env.setdefault("PYXV_PYTHON", sys.executable)
-        for var, name in (("JING", "jing"), ("PYXV_TRANG", "trang")):
+        env.setdefault("PYSCH_PYTHON", sys.executable)
+        for var, name in (("JING", "jing"), ("PYSCH_TRANG", "trang")):
             if (found := tool(var, name)):
                 env[var] = found
         flycheck = Path.home() / ".emacs.d" / "straight" / "build" / "flycheck"
         if "FLYCHECK_DIR" not in env and flycheck.is_dir():
             env["FLYCHECK_DIR"] = str(flycheck)
-        missing = [v for v in ("JING", "PYXV_TRANG", "FLYCHECK_DIR") if v not in env]
+        missing = [v for v in ("JING", "PYSCH_TRANG", "FLYCHECK_DIR") if v not in env]
         if missing:
             say(f"  (not set, so some tests are skipped: {', '.join(missing)})")
-        run(e, "--batch", "-Q", "-L", ".", "-l", "test/py-xmlvalidate-tests.el",
+        run(e, "--batch", "-Q", "-L", ".", "-l", "test/py-schematron-tests.el",
             "-f", "ert-run-tests-batch-and-exit", env=env, capture=False)
 
     def build(self, version):
@@ -192,7 +192,7 @@ class Emacs:
 
 
 class VSCode:
-    repo = "py-xmlvalidate-vscode"
+    repo = "py-schematron-vscode"
 
     def version(self):
         return json.loads(read("package.json")).get("version")
@@ -236,11 +236,11 @@ class Odd2rng(Program):
 def kind():
     if (ROOT / "odd2rng.py").is_file():
         return Odd2rng()
-    if (ROOT / "py-xmlvalidate.el").is_file():
+    if (ROOT / "py-schematron.el").is_file():
         return Emacs()
     if (ROOT / "package.json").is_file():
         return VSCode()
-    if (ROOT / "py-xmlvalidate.py").is_file():
+    if (ROOT / "py-schematron.py").is_file():
         return Program()
     raise Failure(f"{ROOT} is none of the four repositories")
 
@@ -357,13 +357,13 @@ def checks(k, notes_file):
                           f"{'README.md' if type(k) is Program else 'CHANGELOG.md'}); "
                           f"write them, or give --notes FILE")
     if isinstance(k, (Emacs, VSCode)):
-        main_script = ROOT.parent / "py-xmlvalidate" / "py-xmlvalidate.py"
+        main_script = ROOT.parent / "py-schematron" / "py-schematron.py"
         if main_script.is_file():
-            if main_script.read_bytes() != (ROOT / "py-xmlvalidate.py").read_bytes():
-                raise Failure("This copy of py-xmlvalidate.py is not the same as "
+            if main_script.read_bytes() != (ROOT / "py-schematron.py").read_bytes():
+                raise Failure("This copy of py-schematron.py is not the same as "
                               f"{main_script}; run tools/sync-plugins.py there and commit")
         else:
-            say(f"  (no {main_script} to compare the copy of py-xmlvalidate.py with)")
+            say(f"  (no {main_script} to compare the copy of py-schematron.py with)")
     return version, tag, bool(tagged), notes
 
 

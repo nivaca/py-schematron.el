@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Nicolas Vaughan <nicolasvaughan@proton.me>
-# This file is part of py-xmlvalidate-emacs. See the LICENSE file for details.
+# This file is part of py-schematron.el. See the LICENSE file for details.
 """Download and install trang: python3 tools/install-trang.py [--bin FOLDER]
 [--version VERSION] [--force | --uninstall]
 
@@ -52,7 +52,8 @@ VERSION = "20241231"
 SHA1 = {"20241231": "48462bc93cdc5bb5ea1014d37244a6b603d6f6ba"}   # trang-VERSION.zip
 URL = "https://github.com/relaxng/jing-trang/releases/download/V{v}/trang-{v}.zip"
 FILES = ("trang.jar", "trang-manual.html", "copying.txt")
-MARK = "# installed by py-xmlvalidate's tools/install-trang.py"
+MARK = "# installed by py-schematron's tools/install-trang.py"
+OLD_MARKS = ("# installed by py-xmlvalidate's tools/install-trang.py",)   # (until 0.7.0)
 
 
 def say(text: str = ""):
@@ -70,7 +71,8 @@ def fetch(url: str) -> bytes:
 
 def ours(wrapper: Path) -> bool:
     try:
-        return MARK in wrapper.read_text(encoding="utf-8", errors="replace")
+        text = wrapper.read_text(encoding="utf-8", errors="replace")
+        return any(m in text for m in (MARK, *OLD_MARKS))
     except OSError:
         return False
 
@@ -147,7 +149,7 @@ def check(wrapper: Path):
     dirs = [Path(p).resolve() for p in os.environ.get("PATH", "").split(os.pathsep) if p]
     if wrapper.parent.resolve() not in dirs:
         say(f"Note: {wrapper.parent} is not on your PATH; add it, or give the Emacs "
-            f"package the full name ({wrapper}) in py-xmlvalidate-trang.")
+            f"package the full name ({wrapper}) in py-schematron-trang.")
 
 
 def uninstall(wrapper: Path, home: Path):

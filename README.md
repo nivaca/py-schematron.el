@@ -1,10 +1,10 @@
-# py-xmlvalidate for Emacs
+# py-schematron for Emacs
 
 Checks XML documents, TEI editions in particular, against the Schematron
-rules of their schema, with `py-xmlvalidate.py`, the program of
-[py-xmlvalidate](https://codeberg.org/nivaca/py-xmlvalidate) (the package
+rules of their schema, with `py-schematron.py`, the program of
+[py-schematron](https://codeberg.org/nivaca/py-schematron) (the package
 carries its own copy; see [The copy of
-py-xmlvalidate.py](#the-copy-of-py-xmlvalidatepy)), and shows the
+py-schematron.py](#the-copy-of-py-schematronpy)), and shows the
 problems with Flycheck when it is installed, or with Flymake, which comes
 with Emacs. When the schema is a RelaxNG file, it also checks the structure
 with jing, and gives the schema to nxml-mode, so that completion offers what
@@ -20,7 +20,7 @@ Emacs except Python (trang is optional, for nxml's schema).
   A misspelt element is also flagged where it was opened. The mode line
   shows the counts.
 - **All of them:** Flycheck's `C-c ! l`, or `M-x
-  flymake-show-buffer-diagnostics`. `M-x py-xmlvalidate-report` shows the
+  flymake-show-buffer-diagnostics`. `M-x py-schematron-report` shows the
   full text report of the saved file, with each line linked to the
   document.
 - **Completion:** in nxml-mode, `C-RET` offers the elements and attributes
@@ -29,7 +29,7 @@ Emacs except Python (trang is optional, for nxml's schema).
 
 ## Before you start
 
-The package runs `py-xmlvalidate.py`, a Python program, and it needs
+The package runs `py-schematron.py`, a Python program, and it needs
 **Python 3.15 or later with two libraries, `saxonche` and `lxml`.**
 Emacs does not install them for you.
 
@@ -55,7 +55,7 @@ Emacs does not install them for you.
 
 4. **trang** (optional) to give nxml the schema; it needs Java. From this
    repository's folder (Straight's clone is in
-   `~/.emacs.d/straight/repos/py-xmlvalidate-emacs`),
+   `~/.emacs.d/straight/repos/py-schematron.el`),
 
    ```sh
    python3 tools/install-trang.py
@@ -74,7 +74,7 @@ Emacs does not install them for you.
 
 Any of these installs the package from Codeberg (or GitHub, with its URL).
 Each clones this repository, which includes the package's copy of
-`py-xmlvalidate.py`, so updating the package updates the script too.
+`py-schematron.py`, so updating the package updates the script too.
 
 ### With package-vc (built into Emacs)
 
@@ -82,17 +82,17 @@ In your init file:
 
 ```elisp
 (package-vc-install
- '(py-xmlvalidate :url "https://codeberg.org/nivaca/py-xmlvalidate-emacs"))
+ '(py-schematron :url "https://codeberg.org/nivaca/py-schematron.el"))
 ```
 
 or, with `use-package`:
 
 ```elisp
-(use-package py-xmlvalidate
-  :vc (:url "https://codeberg.org/nivaca/py-xmlvalidate-emacs")
-  :hook (nxml-mode . py-xmlvalidate-mode)
+(use-package py-schematron
+  :vc (:url "https://codeberg.org/nivaca/py-schematron.el")
+  :hook (nxml-mode . py-schematron-mode)
   :custom
-  (py-xmlvalidate-python "~/.venvs/schematron/bin/python"))
+  (py-schematron-python "~/.venvs/schematron/bin/python"))
 ```
 
 use-package installs the latest release; `package-vc-install`, the latest
@@ -103,42 +103,46 @@ commit. `M-x package-vc-upgrade` updates the package.
 With `use-package`:
 
 ```elisp
-(use-package py-xmlvalidate
-  :straight (:host codeberg :repo "nivaca/py-xmlvalidate-emacs")
-  :hook (nxml-mode . py-xmlvalidate-mode)
+(use-package py-schematron
+  :straight (:host codeberg :repo "nivaca/py-schematron.el")
+  :hook (nxml-mode . py-schematron-mode)
   :custom
-  (py-xmlvalidate-python "~/.venvs/schematron/bin/python"))
+  (py-schematron-python "~/.venvs/schematron/bin/python"))
 ```
 
 or without it:
 
 ```elisp
 (straight-use-package
- '(py-xmlvalidate :host codeberg :repo "nivaca/py-xmlvalidate-emacs"))
-(add-hook 'nxml-mode-hook #'py-xmlvalidate-mode)
+ '(py-schematron :host codeberg :repo "nivaca/py-schematron.el"))
+(add-hook 'nxml-mode-hook #'py-schematron-mode)
 ```
 
 Straight builds the package from links to its clone (the tests in `test/`
 are left out), and the package follows the link back to the clone to find
-its `py-xmlvalidate.py`. `M-x straight-pull-package RET py-xmlvalidate`
+its `py-schematron.py`. `M-x straight-pull-package RET py-schematron`
 updates it. From GitHub, use `:host github`.
 
-### Moving from the py-xmlvalidate repository
+### Moving from py-xmlvalidate
 
-Until version 0.2.0 the package lived in the `emacs/` folder of
-[py-xmlvalidate](https://codeberg.org/nivaca/py-xmlvalidate), and was
-installed from there (with `:lisp-dir "emacs"` or `:files ("emacs/*.el")`).
-That folder is gone; change the recipe to the ones above, which name this
-repository and need neither. With Straight, the old clone,
-`~/.emacs.d/straight/repos/py-xmlvalidate`, can then be deleted.
+Until 0.7.0 the package was called py-xmlvalidate, in the repository
+py-xmlvalidate-emacs (and until 0.2.0 in the `emacs/` folder of the
+program's repository, then called py-xmlvalidate too). Change the recipe
+to one of the above. The former names of the options and commands
+(`py-xmlvalidate-…`) keep working for now as obsolete aliases, and
+`(require 'py-xmlvalidate)` still loads the package, so an older
+configuration works meanwhile, with warnings. With Straight, the old
+clones `~/.emacs.d/straight/repos/py-xmlvalidate-emacs` and
+`~/.emacs.d/straight/repos/py-xmlvalidate` can then be deleted, and so
+can the old cache of nxml's schemas, `~/.emacs.d/py-xmlvalidate/`.
 
 ### From a clone
 
 If you already have a clone of the repository:
 
 ```elisp
-(add-to-list 'load-path "/path/to/py-xmlvalidate-emacs")
-(require 'py-xmlvalidate)
+(add-to-list 'load-path "/path/to/py-schematron.el")
+(require 'py-schematron)
 ```
 
 ## Setup
@@ -146,8 +150,8 @@ If you already have a clone of the repository:
 Three lines, if you did not use a `use-package` form above:
 
 ```elisp
-(add-hook 'nxml-mode-hook #'py-xmlvalidate-mode)
-(setopt py-xmlvalidate-python "~/.venvs/schematron/bin/python")
+(add-hook 'nxml-mode-hook #'py-schematron-mode)
+(setopt py-schematron-python "~/.venvs/schematron/bin/python")
 (setopt trusted-content '("~/Dropbox/docs/editions/"))   ; your folders
 ```
 
@@ -161,25 +165,25 @@ file from elsewhere is not checked until you put it, or its folder, in
 
 When you open a file that is not trusted, a warning in the `*Warnings*`
 buffer says so, once per file, with the line to add to your init file.
-`M-x py-xmlvalidate-trust-file` trusts it on request: it asks whether to
+`M-x py-schematron-trust-file` trusts it on request: it asks whether to
 trust the file alone or its whole folder, adds it to `trusted-content` for
 the session, starts checking, and puts the line that keeps it in the kill
 ring, ready to paste into your init file. Trust single files rather than
 folders like `~/Downloads/`, where files from elsewhere arrive. Until a
-file is trusted, `py-xmlvalidate-check` and `py-xmlvalidate-refresh-schema`
-say why they cannot run, and `py-xmlvalidate-report` (which runs, since
+file is trusted, `py-schematron-check` and `py-schematron-refresh-schema`
+say why they cannot run, and `py-schematron-report` (which runs, since
 you asked for it) ends with the same note.
 
-Then `M-x py-xmlvalidate-check-setup` says whether Python, its libraries,
+Then `M-x py-schematron-check-setup` says whether Python, its libraries,
 the script and jing are in place.
 
 ## Flycheck or Flymake
 
-With `py-xmlvalidate-frontend` set to `auto` (the default), the package
+With `py-schematron-frontend` set to `auto` (the default), the package
 uses Flycheck when it is installed, and Flymake otherwise; `flycheck` or
 `flymake` chooses one. With Flycheck, the package selects its own checker
 in the buffer (`flycheck-checker`), turns Flycheck on if it was off (and off
-again when `py-xmlvalidate-mode` is turned off), and the problems appear in
+again when `py-schematron-mode` is turned off), and the problems appear in
 Flycheck's usual display: the error list on `C-c ! l`, the fringe, and
 flycheck-posframe or flycheck-inline if you use them. Flycheck's message
 starts with the layer (`Schematron:`, `RelaxNG:`, `XML:`), and the
@@ -193,14 +197,14 @@ that allows anything, so `C-RET` offers nothing. After each check whose
 schema is RelaxNG, this package gives nxml that schema:
 
 - it converts it to the compact syntax nxml reads, with trang, and keeps the
-  result in `~/.emacs.d/py-xmlvalidate/rnc/`; it converts again only when
+  result in `~/.emacs.d/py-schematron/rnc/`; it converts again only when
   the RelaxNG file changes, so other documents with the same schema get it
   at once;
 - it sets it as the buffer's schema without saving its location (nxml's
   own command would offer to write a `schemas.xml` next to the document);
 - it never replaces a schema you gave nxml yourself (with
   `M-x rng-set-schema-file` or through `schemas.xml`), and takes its own
-  back when `py-xmlvalidate-mode` is turned off.
+  back when `py-schematron-mode` is turned off.
 
 Then `C-RET` completes element and attribute names from the schema, and
 `rng-validate-mode`, if it is on, checks the structure at once, with no
@@ -208,11 +212,11 @@ program to run.
 
 When the RelaxNG file changes (for example after you regenerate it from
 the ODD), the next check converts it again, and every open buffer that
-uses it loads the new copy. `M-x py-xmlvalidate-recreate-nxml-schema`
+uses it loads the new copy. `M-x py-schematron-recreate-nxml-schema`
 does the same at once, without waiting for a change: it converts the
 document's schema again, with a new check, and reloads it in every buffer
 that uses it. Use it if the cached copy seems wrong, or after changing
-`py-xmlvalidate-trang`.
+`py-schematron-trang`.
 
 The package also mends three bugs in nxml's XSD datatypes, which make
 nxml reject values that the schema allows and jing accepts:
@@ -234,69 +238,69 @@ nxml reject values that the schema allows and jing accepts:
 
 Each bug is checked for in the running Emacs, as soon as nxml loads its
 XSD code, and mended only if it is there, so an Emacs where it is fixed
-is left alone. `M-x py-xmlvalidate-about` says what was mended, and
-`py-xmlvalidate-fix-nxml` set to nil turns all this off. Unloading the
+is left alone. `M-x py-schematron-about` says what was mended, and
+`py-schematron-fix-nxml` set to nil turns all this off. Unloading the
 package removes its advice. On 200 TEI editions, nxml mended in this way
 agrees with jing on every document.
 
-The converter is `py-xmlvalidate-trang`: `"trang"` (what
+The converter is `py-schematron-trang`: `"trang"` (what
 `tools/install-trang.py` installs), or a command line as a list, for
 example the copy inside oXygen:
 
 ```elisp
-(setopt py-xmlvalidate-trang
+(setopt py-schematron-trang
         '("java" "-cp" "~/bin/oxygen/lib/oxygen-patched-trang.jar"
           "com.thaiopensource.relaxng.translate.Driver"))
 ```
 
 Without trang, the package says so once and nxml keeps its vacuous schema;
-nothing else changes. `py-xmlvalidate-nxml-schema` set to `nil` turns the
+nothing else changes. `py-schematron-nxml-schema` set to `nil` turns the
 feature off.
 
 ## Commands
 
 | Command | What it does |
 |---|---|
-| `py-xmlvalidate-mode` | Turns the checking on or off in the buffer |
-| `py-xmlvalidate-check` | Checks the buffer now |
-| `py-xmlvalidate-refresh-schema` | Downloads the document's remote schema again (after it changed upstream), then checks |
-| `py-xmlvalidate-recreate-nxml-schema` | Converts the document's schema for nxml again (with trang) and reloads it in every buffer that uses it |
-| `py-xmlvalidate-report` | Full report of the saved file, in a buffer with links to the lines |
-| `py-xmlvalidate-trust-file` | Trusts the file, or its folder, after asking; starts checking it |
-| `py-xmlvalidate-check-setup` | Says whether Python, saxonche, lxml, the script, jing and trang are found, and which checker is used |
-| `py-xmlvalidate-goto-rule` | Open the schema at the rule behind the Schematron error on this line: the assert or report, in the ODD or RelaxNG you edit (`M-,` returns). Worth a key in `nxml-mode-map` |
-| `py-xmlvalidate-about` | What the package is: its version, author, licence and links, and what its `py-xmlvalidate.py` says of itself (`--about`) |
-| `py-xmlvalidate-show-log` | What `py-xmlvalidate.py` and jing printed (schema detection, downloads, cache) |
+| `py-schematron-mode` | Turns the checking on or off in the buffer |
+| `py-schematron-check` | Checks the buffer now |
+| `py-schematron-refresh-schema` | Downloads the document's remote schema again (after it changed upstream), then checks |
+| `py-schematron-recreate-nxml-schema` | Converts the document's schema for nxml again (with trang) and reloads it in every buffer that uses it |
+| `py-schematron-report` | Full report of the saved file, in a buffer with links to the lines |
+| `py-schematron-trust-file` | Trusts the file, or its folder, after asking; starts checking it |
+| `py-schematron-check-setup` | Says whether Python, saxonche, lxml, the script, jing and trang are found, and which checker is used |
+| `py-schematron-goto-rule` | Open the schema at the rule behind the Schematron error on this line: the assert or report, in the ODD or RelaxNG you edit (`M-,` returns). Worth a key in `nxml-mode-map` |
+| `py-schematron-about` | What the package is: its version, author, licence and links, and what its `py-schematron.py` says of itself (`--about`) |
+| `py-schematron-show-log` | What `py-schematron.py` and jing printed (schema detection, downloads, cache) |
 
 ## Settings
 
-`M-x customize-group RET py-xmlvalidate`. `trusted-content` still has to
+`M-x customize-group RET py-schematron`. `trusted-content` still has to
 be set (see [Setup](#setup)), whichever way the package was installed.
 
 The settings:
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `py-xmlvalidate-python` | `"python3"` | Python with saxonche and lxml; may start with `~` |
-| `py-xmlvalidate-script` | `nil` | `py-xmlvalidate.py` to run; `nil` is the package's own copy |
-| `py-xmlvalidate-schema` | `nil` | Schema to use instead of the `<?xml-model?>`; relative to the document |
-| `py-xmlvalidate-schema-type` | `rng` | Its type: `rng`, `sch` or `odd` |
-| `py-xmlvalidate-relaxng` | `t` | Also check the structure with jing, when the schema is RelaxNG |
-| `py-xmlvalidate-jing` | `"jing"` | The jing program |
-| `py-xmlvalidate-timeout` | `120` | Seconds after which a check is abandoned |
-| `py-xmlvalidate-live-max-size` | `nil` | Larger buffers (in characters) are checked on opening and saving only |
-| `py-xmlvalidate-frontend` | `auto` | `flycheck`, `flymake`, or `auto` (Flycheck if installed) |
-| `py-xmlvalidate-nxml-schema` | `t` | Give nxml-mode the document's RelaxNG schema, for completion |
-| `py-xmlvalidate-fix-nxml` | `t` | Mend nxml's XSD datatypes where the running Emacs needs it (see above) |
-| `py-xmlvalidate-trang` | `"trang"` | The trang converter: a program, or a command line as a list |
+| `py-schematron-python` | `"python3"` | Python with saxonche and lxml; may start with `~` |
+| `py-schematron-script` | `nil` | `py-schematron.py` to run; `nil` is the package's own copy |
+| `py-schematron-schema` | `nil` | Schema to use instead of the `<?xml-model?>`; relative to the document |
+| `py-schematron-schema-type` | `rng` | Its type: `rng`, `sch` or `odd` |
+| `py-schematron-relaxng` | `t` | Also check the structure with jing, when the schema is RelaxNG |
+| `py-schematron-jing` | `"jing"` | The jing program |
+| `py-schematron-timeout` | `120` | Seconds after which a check is abandoned |
+| `py-schematron-live-max-size` | `nil` | Larger buffers (in characters) are checked on opening and saving only |
+| `py-schematron-frontend` | `auto` | `flycheck`, `flymake`, or `auto` (Flycheck if installed) |
+| `py-schematron-nxml-schema` | `t` | Give nxml-mode the document's RelaxNG schema, for completion |
+| `py-schematron-fix-nxml` | `t` | Mend nxml's XSD datatypes where the running Emacs needs it (see above) |
+| `py-schematron-trang` | `"trang"` | The trang converter: a program, or a command line as a list |
 
-`py-xmlvalidate-schema` and `py-xmlvalidate-schema-type` are safe as
+`py-schematron-schema` and `py-schematron-schema-type` are safe as
 file-local or directory-local variables, for documents without an
 `<?xml-model?>`:
 
 ```elisp
 ;; .dir-locals.el
-((nxml-mode . ((py-xmlvalidate-schema . "schema/smed-schema.rng"))))
+((nxml-mode . ((py-schematron-schema . "schema/smed-schema.rng"))))
 ```
 
 How quickly the problems appear is Flycheck's `flycheck-idle-change-delay`,
@@ -308,43 +312,43 @@ default).
 Starting the check costs little (Python with its libraries loads in about
 15 ms); the time goes into the rules. A small document is checked in a
 tenth of a second; a 26,000-line edition, in about two seconds (with
-py-xmlvalidate.py 1.16 or later; the package carries 1.17). While a check
+py-schematron.py 1.16 or later; the package carries 1.17). While a check
 runs, Flymake's mode-line indicator says so, and typing again cancels it
 and starts a new one, so nothing piles up. For very large files you may
-prefer `py-xmlvalidate-live-max-size`.
+prefer `py-schematron-live-max-size`.
 
-## The copy of py-xmlvalidate.py
+## The copy of py-schematron.py
 
-The package carries its own copy of `py-xmlvalidate.py`, next to
-`py-xmlvalidate.el`, so that installing the package is all that is needed.
+The package carries its own copy of `py-schematron.py`, next to
+`py-schematron.el`, so that installing the package is all that is needed.
 The program itself is developed in
-[py-xmlvalidate](https://codeberg.org/nivaca/py-xmlvalidate), whose
+[py-schematron](https://codeberg.org/nivaca/py-schematron), whose
 `tools/sync-plugins.py` copies each new version here; a release of this
 package says which version of the program it carries
 ([CHANGELOG.md](CHANGELOG.md)). To use another copy, for example a clone
-of py-xmlvalidate, set `py-xmlvalidate-script` to its `py-xmlvalidate.py`.
+of py-schematron, set `py-schematron-script` to its `py-schematron.py`.
 
 ## Tests
 
 From this repository's top folder:
 
 ```sh
-PYXV_PYTHON=~/.venvs/schematron/bin/python JING=jing \
-  FLYCHECK_DIR=~/.emacs.d/straight/build/flycheck PYXV_TRANG=trang \
-  emacs --batch -Q -L . -l test/py-xmlvalidate-tests.el \
+PYSCH_PYTHON=~/.venvs/schematron/bin/python JING=jing \
+  FLYCHECK_DIR=~/.emacs.d/straight/build/flycheck PYSCH_TRANG=trang \
+  emacs --batch -Q -L . -l test/py-schematron-tests.el \
   -f ert-run-tests-batch-and-exit
 ```
 
-Without `PYXV_PYTHON`, only the tests that read the programs' output run;
+Without `PYSCH_PYTHON`, only the tests that read the programs' output run;
 without `FLYCHECK_DIR` (a folder with `flycheck.el`), the Flycheck tests are
-skipped, and without `PYXV_TRANG` (trang's command line), the nxml ones.
+skipped, and without `PYSCH_TRANG` (trang's command line), the nxml ones.
 
 ## Releases
 
-`python3 tools/bundle-zip.py` makes `dist/py-xmlvalidate-emacs-v.VERSION.zip`
-(the version in `py-xmlvalidate.el`) from the files git tracks. Each
-release, on [Codeberg](https://codeberg.org/nivaca/py-xmlvalidate-emacs/releases)
-and [GitHub](https://github.com/nivaca/py-xmlvalidate-emacs/releases), is
+`python3 tools/bundle-zip.py` makes `dist/py-schematron.el-v.VERSION.zip`
+(the version in `py-schematron.el`) from the files git tracks. Each
+release, on [Codeberg](https://codeberg.org/nivaca/py-schematron.el/releases)
+and [GitHub](https://github.com/nivaca/py-schematron.el/releases), is
 tagged `vVERSION` and has that zip attached; [CHANGELOG.md](CHANGELOG.md)
 lists them.
 

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Nicolas Vaughan <nicolasvaughan@proton.me>
-# This file is part of py-xmlvalidate-emacs. See the LICENSE file for details.
+# This file is part of py-schematron.el. See the LICENSE file for details.
 """Makes the release bundle in dist/: python3 tools/bundle-zip.py
 
-dist/py-xmlvalidate-emacs-v.VERSION.zip (the ;; Version: of
-py-xmlvalidate.el), with the package in a folder of the same name:
-py-xmlvalidate.el, its copy of py-xmlvalidate.py, the README, the
+dist/py-schematron.el-v.VERSION.zip (the ;; Version: of
+py-schematron.el), with the package in a folder of the same name:
+py-schematron.el, its copy of py-schematron.py, the README, the
 changelog, the licence, the tests and tools/install-trang.py.  It is made
 from the files git tracks, so nothing that only lives in this folder gets
 in (compiled files, caches, editor lock files ...).  Left out as well: this
@@ -27,23 +27,23 @@ import zipfile
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # (above tools/)
 DIST = os.path.join(HERE, "dist")
-NAME = "py-xmlvalidate-emacs"
+NAME = "py-schematron.el"
 
 #  What is in the repository but not part of the program
 NOT_PART = ("tools/bundle-zip.py", "tools/release.py")
 
 
 def version() -> str:
-    """The ;; Version: header of py-xmlvalidate.el."""
-    with open(os.path.join(HERE, "py-xmlvalidate.el"), encoding="utf-8") as f:
+    """The ;; Version: header of py-schematron.el."""
+    with open(os.path.join(HERE, "py-schematron.el"), encoding="utf-8") as f:
         m = re.search(r'^;; Version:\s*(\S+)', f.read(), re.M)
     if not m:
-        sys.exit("bundle-zip.py: no ;; Version: in py-xmlvalidate.el")
+        sys.exit("bundle-zip.py: no ;; Version: in py-schematron.el")
     return m.group(1)
 
 
 def name() -> str:
-    """The name of the zip, without .zip: py-xmlvalidate-emacs-v.0.3.0."""
+    """The name of the zip, without .zip: py-schematron.el-v.0.3.0."""
     return f"{NAME}-v.{version()}"
 
 

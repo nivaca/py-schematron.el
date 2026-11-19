@@ -40,14 +40,14 @@ jobs:
       - name: Byte-compile
         run: |
           emacs --batch -Q -L . --eval '(setq byte-compile-error-on-warn t)' \
-            -f batch-byte-compile py-xmlvalidate.el
-          rm -f py-xmlvalidate.elc
+            -f batch-byte-compile py-schematron.el
+          rm -f py-schematron.elc
 
       - name: Test
         env:
           FLYCHECK_DIR: ${{ runner.temp }}/flycheck
           JING: /usr/bin/jing
-          PYXV_TRANG: /usr/bin/trang
+          PYSCH_TRANG: /usr/bin/trang
         run: |
-          export PYXV_PYTHON="$(command -v python)"
-          emacs --batch -Q -L . -l test/py-xmlvalidate-tests.el -f ert-run-tests-batch-and-exit
+          export PYSCH_PYTHON="$(command -v python)"
+          emacs --batch -Q -L . -l test/py-schematron-tests.el -f ert-run-tests-batch-and-exit

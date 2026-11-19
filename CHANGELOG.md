@@ -1,12 +1,33 @@
 # Changelog
 
-All notable changes to py-xmlvalidate for Emacs. The releases, with their
+All notable changes to py-schematron for Emacs. The releases, with their
 zip files, are on
-[Codeberg](https://codeberg.org/nivaca/py-xmlvalidate-emacs/releases) and
-[GitHub](https://github.com/nivaca/py-xmlvalidate-emacs/releases). Until
+[Codeberg](https://codeberg.org/nivaca/py-schematron.el/releases) and
+[GitHub](https://github.com/nivaca/py-schematron.el/releases). Until
 0.2.0 they were published in
-[py-xmlvalidate](https://codeberg.org/nivaca/py-xmlvalidate/releases), as
+[py-schematron](https://codeberg.org/nivaca/py-schematron/releases), as
 `emacs-vVERSION`.
+
+## 0.8.0 — 2026-11-19 (py-schematron.py 2.0)
+
+- **The package is renamed py-schematron** (it was py-xmlvalidate), with
+  the program, now py-schematron. Its repository is nivaca/py-schematron.el
+  on Codeberg and GitHub; the old addresses redirect to it. With Straight:
+
+  ```elisp
+  (use-package py-schematron
+    :straight (:host codeberg :repo "nivaca/py-schematron.el" :depth 1)
+    :hook (nxml-mode . py-schematron-mode))
+  ```
+
+  Every option and command is now `py-schematron-…`. The former names
+  keep working for now as obsolete aliases, and `(require
+  'py-xmlvalidate)` loads the package, so an older configuration still
+  works, with warnings. The cache of nxml's schemas moves to
+  `~/.emacs.d/py-schematron/`; the old `py-xmlvalidate/` folder there can
+  be deleted. The trang installer recognises a wrapper it installed under
+  the old name.
+- Carries py-schematron.py 2.0.
 
 ## 0.7.0 — 2026-11-19 (py-xmlvalidate.py 1.21)
 
