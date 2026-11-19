@@ -5,9 +5,10 @@
 """Release the current version: python3 tools/release.py [--dry-run]
 [--yes] [--skip-tests] [--notes FILE]
 
-The same script serves the three repositories (py-xmlvalidate, and the
-plugins py-xmlvalidate-emacs and py-xmlvalidate-vscode, which get their
-copy from tools/sync-plugins.py) and works out which one it is in:
+The same script serves four repositories (py-xmlvalidate; the plugins
+py-xmlvalidate-emacs and py-xmlvalidate-vscode, which get their copy from
+tools/sync-plugins.py; and ODD2RNG, whose copy is made by hand) and works
+out which one it is in:
 
   py-xmlvalidate         version: __version__ of py-xmlvalidate.py
                          notes:   its row in the version history of README.md
@@ -18,14 +19,17 @@ copy from tools/sync-plugins.py) and works out which one it is in:
   py-xmlvalidate-vscode  version: package.json
                          notes:   its section of CHANGELOG.md
                          file:    dist/validate-schematron-VERSION.vsix (npm run package)
+  ODD2RNG                version: __version__ of odd2rng.py
+                         notes:   its section of CHANGELOG.md
+                         file:    dist/ODD2RNG-v.VERSION.zip (tools/bundle-zip.py)
 
 The tag is vVERSION.  In order, the script:
 
   1. checks: on main, nothing uncommitted, a tag that is new or already on
      this commit, release notes found, and (in a plugin) a copy of
      py-xmlvalidate.py that is the same as ../py-xmlvalidate's;
-  2. runs the tests (the program's unittest suite, the Emacs package's ERT
-     tests, the extension's unit tests);
+  2. runs the tests (the unittest suites of the programs, the Emacs
+     package's ERT tests, the extension's unit tests);
   3. makes the file;
   4. tags the commit and pushes main and the tag to Codeberg and GitHub;
   5. makes the release on Codeberg (with tea) and on GitHub (with gh), with
@@ -212,14 +216,33 @@ class VSCode:
         run("npm", "run", "package", capture=False)
 
 
+class Odd2rng(Program):
+    repo = "ODD2RNG"
+
+    def version(self):
+        m = re.search(r'^__version__\s*=\s*"([^"]+)"', read("odd2rng.py"), re.M)
+        return m.group(1) if m else None
+
+    def notes(self, version):
+        return changelog_notes(version)
+
+    def asset(self, version):
+        return ROOT / "dist" / f"ODD2RNG-v.{version}.zip"
+
+    def footer(self, name):
+        return (f"File: `{name}`, the script, its installer, the tests and the documentation.")
+
+
 def kind():
+    if (ROOT / "odd2rng.py").is_file():
+        return Odd2rng()
     if (ROOT / "py-xmlvalidate.el").is_file():
         return Emacs()
     if (ROOT / "package.json").is_file():
         return VSCode()
     if (ROOT / "py-xmlvalidate.py").is_file():
         return Program()
-    raise Failure(f"{ROOT} is none of the three repositories")
+    raise Failure(f"{ROOT} is none of the four repositories")
 
 
 # ------------------------------------------------------------------ the forges
@@ -331,9 +354,9 @@ def checks(k, notes_file):
         notes = k.notes(version)
         if not notes:
             raise Failure(f"No release notes for {version} (in "
-                          f"{'README.md' if isinstance(k, Program) else 'CHANGELOG.md'}); "
+                          f"{'README.md' if type(k) is Program else 'CHANGELOG.md'}); "
                           f"write them, or give --notes FILE")
-    if not isinstance(k, Program):
+    if isinstance(k, (Emacs, VSCode)):
         main_script = ROOT.parent / "py-xmlvalidate" / "py-xmlvalidate.py"
         if main_script.is_file():
             if main_script.read_bytes() != (ROOT / "py-xmlvalidate.py").read_bytes():
