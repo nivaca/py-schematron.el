@@ -35,19 +35,33 @@ Emacs does not install them for you.
 
 1. **Python.** In a terminal, `python3 --version` should print 3.15 or
    higher. If it does not, install Python from your system's packages
-   (`sudo dnf install python3`, `sudo apt install python3 python3-venv`)
-   or from <https://www.python.org/downloads/>.
+   (`sudo dnf install python3.15`, `sudo apt install python3.15
+   python3.15-venv`) or from <https://www.python.org/downloads/>.
 
-2. **The libraries,** in a virtual environment of their own (recent
-   systems refuse `pip install` outside one):
+2. **The libraries,** with py-schematron's installer, which makes a Python
+   environment of its own with saxonche and lxml, in your user folders:
+
+   ```sh
+   curl -LsSf https://raw.githubusercontent.com/nivaca/py-schematron/main/installers/install.sh | sh
+   ```
+
+   On Windows, in PowerShell:
+   `powershell -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/nivaca/py-schematron/main/installers/install.ps1 | iex"`.
+   While `py-schematron-python` is nil, its default, the package uses that
+   environment's Python by itself, so there is nothing to set.
+   py-schematron's
+   [README](https://codeberg.org/nivaca/py-schematron#21-with-the-installer-linux-macos-windows)
+   explains the installer in detail.
+
+   Or, to manage the Python yourself, a virtual environment of your own
+   (recent systems refuse `pip install` outside one):
 
    ```sh
    python3 -m venv ~/.venvs/schematron
    ~/.venvs/schematron/bin/pip install saxonche lxml
    ```
 
-   On Windows: `py -m venv %USERPROFILE%\.venvs\schematron`, then
-   `%USERPROFILE%\.venvs\schematron\Scripts\pip install saxonche lxml`.
+   and then `(setopt py-schematron-python "~/.venvs/schematron/bin/python")`.
 
 3. **jing** (optional) for the RelaxNG check: `sudo dnf install jing`,
    `sudo apt install jing`, or <https://relaxng.org/jclark/jing.html>.
@@ -90,9 +104,7 @@ or, with `use-package`:
 ```elisp
 (use-package py-schematron
   :vc (:url "https://codeberg.org/nivaca/py-schematron.el")
-  :hook (nxml-mode . py-schematron-mode)
-  :custom
-  (py-schematron-python "~/.venvs/schematron/bin/python"))
+  :hook (nxml-mode . py-schematron-mode))
 ```
 
 use-package installs the latest release; `package-vc-install`, the latest
@@ -105,9 +117,7 @@ With `use-package`:
 ```elisp
 (use-package py-schematron
   :straight (:host codeberg :repo "nivaca/py-schematron.el")
-  :hook (nxml-mode . py-schematron-mode)
-  :custom
-  (py-schematron-python "~/.venvs/schematron/bin/python"))
+  :hook (nxml-mode . py-schematron-mode))
 ```
 
 or without it:
@@ -147,13 +157,15 @@ If you already have a clone of the repository:
 
 ## Setup
 
-Three lines, if you did not use a `use-package` form above:
+Two lines, if you did not use a `use-package` form above:
 
 ```elisp
 (add-hook 'nxml-mode-hook #'py-schematron-mode)
-(setopt py-schematron-python "~/.venvs/schematron/bin/python")
 (setopt trusted-content '("~/Dropbox/docs/editions/"))   ; your folders
 ```
+
+and, if you set up Python yourself rather than with the installer,
+`(setopt py-schematron-python "~/.venvs/schematron/bin/python")`.
 
 **Why `trusted-content`.** Since Emacs 30, Flymake checks only the files
 you trust, and this package follows that rule, with Flycheck too (which
@@ -281,7 +293,7 @@ The settings:
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `py-schematron-python` | `"python3"` | Python with saxonche and lxml; may start with `~` |
+| `py-schematron-python` | `nil` | Python with saxonche and lxml; may start with `~`. nil: the one py-schematron's installer made, if it is installed, or else `"python3"` |
 | `py-schematron-script` | `nil` | `py-schematron.py` to run; `nil` is the package's own copy |
 | `py-schematron-schema` | `nil` | Schema to use instead of the `<?xml-model?>`; relative to the document |
 | `py-schematron-schema-type` | `rng` | Its type: `rng`, `sch` or `odd` |

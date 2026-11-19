@@ -8,6 +8,18 @@ zip files, are on
 [py-schematron](https://codeberg.org/nivaca/py-schematron/releases), as
 `emacs-vVERSION`.
 
+## 0.9.0 — 2026-11-19 (py-schematron.py 2.1)
+
+- **No Python to set up by hand.** py-schematron 2.1 has an installer for
+  Linux, macOS and Windows that makes a Python environment with saxonche
+  and lxml. While `py-schematron-python` is nil, now its default, the
+  package uses that environment's Python if it is installed, and
+  `python3` otherwise. A value already set keeps working as before.
+- The setup steps (*Before you start*) start with the installer; a
+  virtual environment of your own remains as an alternative. The error
+  messages about Python point to the installer too.
+- Carries py-schematron.py 2.1.
+
 ## 0.8.0 — 2026-11-19 (py-schematron.py 2.0)
 
 - **The package is renamed py-schematron** (it was py-xmlvalidate), with

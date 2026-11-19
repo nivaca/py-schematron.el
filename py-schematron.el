@@ -4,7 +4,7 @@
 ;; Copyright (C) 2026 Nicolas Vaughan <nicolasvaughan@proton.me>
 
 ;; Author: Nicolas Vaughan <nicolasvaughan@proton.me>
-;; Version: 0.8.0
+;; Version: 0.9.0
 ;; Package-Requires: ((emacs "31.1"))
 ;; Keywords: languages, xml, tools
 ;; URL: https://codeberg.org/nivaca/py-schematron.el
@@ -57,7 +57,9 @@
 ;;
 ;;   (add-hook 'nxml-mode-hook #'py-schematron-mode)
 ;;
-;; and, if the libraries live in a virtual environment,
+;; The Python comes from py-schematron's installer, which the package
+;; finds by itself; if the libraries live in a virtual environment of
+;; your own instead,
 ;;
 ;;   (setopt py-schematron-python "~/.venvs/schematron/bin/python")
 ;;
@@ -110,11 +112,35 @@
   (file-name-directory (or load-file-name buffer-file-name default-directory))
   "Folder of this file, where the package's py-schematron.py also is.")
 
-(defcustom py-schematron-python "python3"
+(defcustom py-schematron-python nil
   "Python interpreter that has the saxonche and lxml libraries.
-For example \"~/.venvs/schematron/bin/python\".  Python 3.15 or
-later is needed."
-  :type 'string)
+nil, the default, means the one that py-schematron's installer made,
+if it is installed (see `py-schematron--installer-python'), or else
+\"python3\".  Or a file name, such as
+\"~/.venvs/schematron/bin/python\".  Python 3.15 or later is needed."
+  :type '(choice (const :tag "Automatic: the installer's, or python3" nil)
+                 (string :tag "Interpreter")))
+
+(defun py-schematron--installer-python ()
+  "Where py-schematron's installer puts its Python.
+That is, the Python of the environment it makes, with saxonche and
+lxml (installers/install.py in py-schematron)."
+  (pcase system-type
+    ('windows-nt
+     (expand-file-name "py-schematron/venv/Scripts/python.exe"
+                       (or (getenv "LOCALAPPDATA") (expand-file-name "~/AppData/Local"))))
+    ('darwin (expand-file-name "~/Library/Application Support/py-schematron/venv/bin/python"))
+    (_ (expand-file-name "py-schematron/venv/bin/python"
+                         (or (getenv "XDG_DATA_HOME") (expand-file-name "~/.local/share"))))))
+
+(defun py-schematron--python ()
+  "The Python that runs py-schematron.py.
+`py-schematron-python', or else the installer's Python if it exists,
+or else \"python3\"."
+  (or py-schematron-python
+      (let ((installer (py-schematron--installer-python)))
+        (and (file-executable-p installer) installer))
+      "python3"))
 
 (defcustom py-schematron-script nil
   "Path to py-schematron.py.
@@ -358,7 +384,7 @@ Since 1.21 py-schematron.py gives its own errors in JSON too; this
 is for Python's own failures, and for older scripts.
 PYTHON is the interpreter that was used."
   (if (string-match "No module named '?\\(saxonche\\|lxml\\)" stderr)
-      (format "The Python interpreter \"%s\" does not have the '%s' library.  Set `py-schematron-python' to a Python that has saxonche and lxml, or install them into this one: %s -m pip install saxonche lxml"
+      (format "The Python interpreter \"%s\" does not have the '%s' library.  The easiest fix is py-schematron's installer, whose Python the package finds by itself (see the README); or set `py-schematron-python' to a Python that has saxonche and lxml, or install them into this one: %s -m pip install saxonche lxml"
               python (match-string 1 stderr) python)
     (let ((lines (seq-remove
                   (lambda (l)
@@ -527,7 +553,7 @@ A check still under way in the buffer is cancelled first."
          (refresh py-schematron--refresh)
          (schema (and py-schematron-schema
                       (expand-file-name py-schematron-schema)))
-         (python py-schematron-python)
+         (python (py-schematron--python))
          (run (list :tmpdir tmpdir :procs nil :buffers nil)))
     (setq py-schematron--refresh nil
           py-schematron--run run)
@@ -576,7 +602,7 @@ A check still under way in the buffer is cancelled first."
                      (cond
                       ((stringp fatal) fatal)
                       (code (py-schematron--explain-failure stderr python))
-                      (t (format "Could not run the Python interpreter \"%s\".  Set `py-schematron-python' to a Python that has saxonche and lxml (M-x py-schematron-check-setup)."
+                      (t (format "Could not run the Python interpreter \"%s\".  Install py-schematron with its installer, whose Python the package finds by itself, or set `py-schematron-python' to a Python that has saxonche and lxml (M-x py-schematron-check-setup)."
                                python)))
                      :error "py-schematron")))
            (let* ((items (py-schematron--json-items json))
@@ -1268,8 +1294,8 @@ it; the report then ends with a note that live checking is off."
     (with-current-buffer
         (compilation-start
          (mapconcat #'shell-quote-argument
-                    (append (list (or (py-schematron--program py-schematron-python)
-                                      py-schematron-python)
+                    (append (list (or (py-schematron--program (py-schematron--python))
+                                      (py-schematron--python))
                                   (py-schematron--script))
                             args)
                     " ")
@@ -1330,13 +1356,14 @@ STATUS and MSG are as in `compilation-exit-message-function'."
   "Say whether Python, its libraries, the script, jing and trang are in place.
 Also says which checker, Flycheck or Flymake, is used."
   (interactive)
-  (let* ((python (py-schematron--program py-schematron-python))
+  (let* ((python (py-schematron--program (py-schematron--python)))
          (script (py-schematron--script))
          (jing (py-schematron--program py-schematron-jing))
          (lines nil))
     (cl-flet ((say (ok text) (push (concat (if ok "  ok   " "  NO   ") text) lines)))
       (if (not python)
-          (say nil (format "Python: \"%s\" not found.  Set `py-schematron-python'." py-schematron-python))
+          (say nil (format "Python: \"%s\" not found.  Run py-schematron's installer, or set `py-schematron-python'."
+                           (py-schematron--python)))
         (let ((probe (with-temp-buffer
                        (cons (call-process python nil t nil "-c"
                                            "import sys; print(sys.version.split()[0]); import saxonche, lxml")
@@ -1410,13 +1437,13 @@ Below, what the package's py-schematron.py says of itself (its
          (version (or (ignore-errors
                         (with-temp-buffer (insert-file-contents el) (lm-version)))
                       "?"))
-         (python (py-schematron--program py-schematron-python))
+         (python (py-schematron--program (py-schematron--python)))
          (script (py-schematron--script))
          (program
           (cond
            ((not python)
             (format "(the Python interpreter \"%s\" was not found; see `py-schematron-python')"
-                    py-schematron-python))
+                    (py-schematron--python)))
            ((not (file-readable-p script))
             (format "(py-schematron.py was not found: %s)" script))
            (t (with-temp-buffer

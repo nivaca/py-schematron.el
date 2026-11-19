@@ -510,6 +510,25 @@ Flymake's own warnings are left out."
       (should (looking-at-p "<sch:assert"))
       (kill-buffer))))
 
+(ert-deftest pysch-installer-python ()
+  "With `py-schematron-python' nil, the installer's Python if it exists, else python3."
+  (let* ((dir (make-temp-file "pysch-data-" t))
+         (process-environment (cons (concat "XDG_DATA_HOME=" dir) process-environment))
+         (system-type 'gnu/linux)
+         (python (expand-file-name "py-schematron/venv/bin/python" dir)))
+    (unwind-protect
+        (progn
+          (should (equal (py-schematron--installer-python) python))
+          (let ((py-schematron-python nil))
+            (should (equal (py-schematron--python) "python3"))      ; (not installed)
+            (make-directory (file-name-directory python) t)
+            (with-temp-file python (insert "#!/bin/sh\n"))
+            (set-file-modes python #o755)
+            (should (equal (py-schematron--python) python)))
+          (let ((py-schematron-python "/my/python"))                 ; (a setting wins)
+            (should (equal (py-schematron--python) "/my/python"))))
+      (delete-directory dir t))))
+
 (ert-deftest pysch-obsolete-names ()
   "The package's names until 0.7.0 still work, as obsolete aliases."
   (let ((out (pysch-test--fresh-emacs
