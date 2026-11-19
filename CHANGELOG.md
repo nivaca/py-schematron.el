@@ -8,6 +8,21 @@ zip files, are on
 [py-xmlvalidate](https://codeberg.org/nivaca/py-xmlvalidate/releases), as
 `emacs-vVERSION`.
 
+## 0.4.0 — 2026-11-18 (py-xmlvalidate.py 1.18)
+
+- `M-x py-xmlvalidate-recreate-nxml-schema` converts the document's
+  RelaxNG schema for nxml again, at once, and reloads it in every buffer
+  that uses it. It explains why when it cannot run (no trang, a file
+  outside `trusted-content`, a schema chosen by hand, a schema that is not
+  RelaxNG).
+- `py-xmlvalidate-report` ends with "incomplete" when py-xmlvalidate.py
+  exits 3: since 1.18 it does so when a rule could not be evaluated, as
+  well as for a document that is not well formed.
+- Fix: when the RelaxNG file changed, the compact copy was converted
+  again, but buffers that already used it kept nxml's old copy until they
+  were reopened, because the file name stays the same. Every buffer that
+  uses it now reloads it.
+
 ## 0.3.0 — 2026-11-18 (py-xmlvalidate.py 1.17)
 
 - The package has a repository of its own, py-xmlvalidate-emacs, and

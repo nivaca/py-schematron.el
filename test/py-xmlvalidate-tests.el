@@ -757,4 +757,91 @@ Flymake's own warnings are left out."
             (should-not (string-search (concat "\"" py-xmlvalidate--word-pattern "\"") text))))
       (delete-directory dir t))))
 
+;;;; Recreating the schema for nxml
+
+(defun pyxv-test--offered (after)
+  "Element names nxml offers just after the first occurrence of AFTER."
+  (save-excursion
+    (goto-char (point-min))
+    (search-forward after)
+    (rng-set-state-after (point))
+    (sort (mapcar #'cdr (rng-match-possible-start-tag-names)) #'string<)))
+
+(defconst pyxv-test--valid
+  (concat pyxv-test--pi "\n<TEI xmlns=\"http://www.tei-c.org/ns/1.0\">\n<p>a</p>\n</TEI>\n")
+  "A valid document for the test schema.")
+
+(ert-deftest pyxv-nxml-schema-recreate ()
+  "The command converts the schema again, and every buffer using it reloads it."
+  (pyxv-test--with-env
+    (pyxv-test--with-trang
+      (dolist (f '("a.xml" "b.xml")) (pyxv-test--write f pyxv-test--valid))
+      (let ((cache (expand-file-name "py-xmlvalidate/rnc/" user-emacs-directory))
+            (a (pyxv-test--open "a.xml")) b rnc)
+        (with-current-buffer a (pyxv-test--check) (setq rnc (pyxv-test--nxml-ready cache)))
+        (setq b (pyxv-test--open "b.xml"))
+        (with-current-buffer b (pyxv-test--check) (should (equal rng-current-schema-file-name rnc)))
+        ;; spoil the cached copy (p becomes q) and load it in both buffers
+        (let ((text (with-temp-buffer (insert-file-contents rnc) (buffer-string))))
+          (should (string-search "element p " text))
+          (with-temp-file rnc (insert (string-replace "element p " "element q " text))))
+        (dolist (buf (list a b))
+          (with-current-buffer buf
+            (rng-set-schema-file-1 rnc)
+            (should-not (member "p" (pyxv-test--offered "<TEI")))))
+        ;; recreate it from one of them
+        (with-current-buffer a (py-xmlvalidate-recreate-nxml-schema))
+        (pyxv-test--wait (lambda () (with-current-buffer b (member "p" (pyxv-test--offered "<TEI"))))
+                         "the other buffer to reload" 60)
+        (with-current-buffer a (should (member "p" (pyxv-test--offered "<TEI"))))
+        (should-not (string-search "element q " (with-temp-buffer (insert-file-contents rnc) (buffer-string))))
+        (should (string-search py-xmlvalidate--word-pattern-for-nxml
+                               (with-temp-buffer (insert-file-contents rnc) (buffer-string))))
+        (should (string-match-p "nxml.s schema recreated from schema.rng (2 buffers)"
+                                (with-current-buffer "*Messages*" (buffer-string))))
+        (should-not (file-exists-p (expand-file-name "schemas.xml" pyxv-test--dir)))))))
+
+(ert-deftest pyxv-nxml-schema-follows-rng ()
+  "When the RelaxNG file changes, the next check converts it again and the
+open buffer reloads it, although the compact file keeps its name."
+  (pyxv-test--with-env
+    (pyxv-test--with-trang
+      (pyxv-test--write "a.xml" pyxv-test--valid)
+      (let ((cache (expand-file-name "py-xmlvalidate/rnc/" user-emacs-directory))
+            (rng (expand-file-name "schema.rng" pyxv-test--dir)) rnc)
+        (with-current-buffer (pyxv-test--open "a.xml")
+          (pyxv-test--check)
+          (setq rnc (pyxv-test--nxml-ready cache))
+          (should (member "note" (pyxv-test--offered "<p>")))
+          ;; the schema changes on disk: note becomes remark
+          (let ((text (with-temp-buffer (insert-file-contents rng) (buffer-string))))
+            (with-temp-file rng (insert (string-replace "<element name=\"note\">" "<element name=\"remark\">" text))))
+          (set-file-times rng (time-add nil 10))
+          (pyxv-test--check)
+          (pyxv-test--wait (lambda () (member "remark" (pyxv-test--offered "<p>")))
+                           "the reloaded schema" 60)
+          (should (equal rng-current-schema-file-name rnc))
+          (should-not (member "note" (pyxv-test--offered "<p>"))))))))
+
+(ert-deftest pyxv-nxml-schema-recreate-refusals ()
+  "The command explains why it cannot run."
+  (pyxv-test--with-env
+    (pyxv-test--write "a.xml" pyxv-test--valid)
+    (let ((py-xmlvalidate-nxml-schema t)
+          (py-xmlvalidate--warned (make-hash-table :test #'equal)))
+      (pyxv-test--capturing-warnings warnings
+        (with-current-buffer (pyxv-test--open "a.xml")
+          (let ((py-xmlvalidate-trang "no-such-trang"))
+            (should (string-match-p "No trang found"
+                                    (cadr (should-error (py-xmlvalidate-recreate-nxml-schema)
+                                                        :type 'user-error)))))
+          (let ((py-xmlvalidate-nxml-schema nil))
+            (should-error (py-xmlvalidate-recreate-nxml-schema) :type 'user-error))
+          (when (getenv "PYXV_TRANG")
+            (let ((trusted-content nil))
+              (should (string-match-p "is not in .trusted-content."
+                                      (cadr (should-error (py-xmlvalidate-recreate-nxml-schema)
+                                                          :type 'user-error))))))
+          (should (<= (length warnings) 1)))))))
+
 ;;; py-xmlvalidate-tests.el ends here

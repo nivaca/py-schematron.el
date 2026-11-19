@@ -206,6 +206,14 @@ Then `C-RET` completes element and attribute names from the schema, and
 `rng-validate-mode`, if it is on, checks the structure at once, with no
 program to run.
 
+When the RelaxNG file changes (for example after you regenerate it from
+the ODD), the next check converts it again, and every open buffer that
+uses it loads the new copy. `M-x py-xmlvalidate-recreate-nxml-schema`
+does the same at once, without waiting for a change: it converts the
+document's schema again, with a new check, and reloads it in every buffer
+that uses it. Use it if the cached copy seems wrong, or after changing
+`py-xmlvalidate-trang`.
+
 One adjustment is made in nxml's copy of the schema. nxml's tables for the
 Unicode categories `\p{P}` and `\p{S}` leave out ASCII and Latin-1
 punctuation and symbols such as `#`, `%`, `!`, `@` and `§`, so it rejects
@@ -235,6 +243,7 @@ feature off.
 | `py-xmlvalidate-mode` | Turns the checking on or off in the buffer |
 | `py-xmlvalidate-check` | Checks the buffer now |
 | `py-xmlvalidate-refresh-schema` | Downloads the document's remote schema again (after it changed upstream), then checks |
+| `py-xmlvalidate-recreate-nxml-schema` | Converts the document's schema for nxml again (with trang) and reloads it in every buffer that uses it |
 | `py-xmlvalidate-report` | Full report of the saved file, in a buffer with links to the lines |
 | `py-xmlvalidate-trust-file` | Trusts the file, or its folder, after asking; starts checking it |
 | `py-xmlvalidate-check-setup` | Says whether Python, saxonche, lxml, the script, jing and trang are found, and which checker is used |

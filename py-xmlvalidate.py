@@ -69,7 +69,7 @@ if sys.version_info < (3, 15):
 from lxml import etree
 from saxonche import PySaxonProcessor
 
-__version__ = "1.17"
+__version__ = "1.18"
 
 SCH_NS = 'http://purl.oclc.org/dsdl/schematron'
 S = f'{{{SCH_NS}}}'
@@ -361,9 +361,13 @@ def leer_mensaje(t):
 
 def cargar_reglas(sch_path: Path):
     """Devuelve (namespaces, patterns); cada pattern es (id, [reglas]), cada
-    regla (context, [tests], conjunta, lote) y cada test (tipo, xpath,
-    mensaje, segmentos, role). Los <let> (de schema, pattern y regla, por ese orden)
-    ya van integrados en las expresiones XPath de tests y segmentos.
+    regla (context, [tests], conjunta, lote, selección) y cada test (tipo,
+    xpath, mensaje, segmentos, role). Los <let> ya van integrados en las
+    expresiones XPath de tests, segmentos y selección: los de schema y de
+    pattern (por ese orden) ligados con la raíz del documento como contexto
+    (con_globales), y los de la regla con su nodo de contexto (con_lets),
+    como manda ISO Schematron.  `selección` es la expresión que da los
+    nodos de contexto de la regla.
 
     `conjunta` evalúa todos los tests de la regla en una sola llamada, con
     los <let> calculados una vez por nodo, como manda ISO Schematron; por
@@ -390,14 +394,16 @@ def cargar_reglas(sch_path: Path):
             avisar_una_vez('abstract',
                            'patterns abstractos/is-a no implementados: omitidos')
             continue
-        lets_pat = lets_schema + leer_lets(pat)
+        # <let> de schema y de pattern: según ISO Schematron se evalúan con
+        # la raíz del documento como contexto, no con el nodo de la regla
+        globales = lets_schema + leer_lets(pat)
         reglas = []
         for rule in pat.findall(S + 'rule'):
             if rule.get('abstract') == 'true':
                 avisar_una_vez('abstract-rule',
                                'reglas abstractas no implementadas: omitidas')
                 continue
-            lets = lets_pat + leer_lets(rule)
+            lets = leer_lets(rule)              # (los de la regla: por nodo)
             tests, crudos = [], []
             for t in rule:
                 if not isinstance(t.tag, str):      # comentarios, PIs
@@ -412,12 +418,14 @@ def cargar_reglas(sch_path: Path):
                     msg, segs = leer_mensaje(t)
                     # value-of produce el VALOR de cadena de cada ítem (no
                     # su serialización: un atributo daría 'x="v"').
-                    segs = [(k, 'string-join((for $VALIDATE_V in ('
-                                f'{con_lets(lets, v)}) return '
-                                "string($VALIDATE_V)), ' ')")
+                    segs = [(k, con_globales(globales,
+                                             'string-join((for $VALIDATE_V in ('
+                                             f'{con_lets(lets, v)}) return '
+                                             "string($VALIDATE_V)), ' ')"))
                             if k == 'exp' else (k, v)
                             for k, v in segs]
-                    tests.append((qn.localname, con_lets(lets, t.get('test')),
+                    tests.append((qn.localname,
+                                  con_globales(globales, con_lets(lets, t.get('test'))),
                                   msg, segs, t.get('role') or ''))
                     crudos.append(t.get('test'))
                 elif qn.localname != 'let':
@@ -426,17 +434,30 @@ def cargar_reglas(sch_path: Path):
                                    f'{qn.localname} (omitido)')
             ctx = rule.get('context')
             todos = '(' + ', '.join(f'boolean(({c}))' for c in crudos) + ')'
-            conjunta = con_lets(lets, todos) if len(crudos) > 1 else None
+            conjunta = (con_globales(globales, con_lets(lets, todos))
+                        if len(crudos) > 1 else None)
             sel = ctx if ctx.startswith('/') else f'//({ctx})'
-            lote = (f'for $VALIDATE_N in ({sel}) return $VALIDATE_N/'
-                    f'(string(path(.)){", " + con_lets(lets, todos) if crudos else ""})')
-            reglas.append((ctx, tests, conjunta, lote))
+            lote = con_globales(globales,
+                                f'for $VALIDATE_N in ({sel}) return $VALIDATE_N/'
+                                f'(string(path(.)){", " + con_lets(lets, todos) if crudos else ""})')
+            reglas.append((ctx, tests, conjunta, lote, con_globales(globales, sel)))
         if reglas:
             patterns.append((pat.get('id') or '', reglas))
     if root.find(S + 'phase') is not None:
         avisar_una_vez('phase', 'phases no implementadas: se ejecutan '
                                 'todos los patterns')
     return nss, patterns
+
+
+def con_globales(lets, expr):
+    """Liga los <let> de schema y de pattern con la raíz del documento como
+    contexto, como manda ISO Schematron, sea cual sea el nodo con que se
+    evalúe EXPR: root(.) ! (valor).  (El operador ! no reordena ni quita
+    duplicados, a diferencia de /.)  En la llamada única de cada regla se
+    evalúan una sola vez, fuera del recorrido de sus nodos."""
+    for name, value in reversed(lets):
+        expr = f"let ${name} := (root(.) ! ({con_lets([], value)})) return ({expr})"
+    return expr
 
 
 def con_lets(lets, expr):
@@ -502,9 +523,8 @@ def validar(doc_path: Path, nss, patterns, proc, n_lineas=None, nombre=None):
         finally:
             xp.set_context(xdm_item=doc)
 
-    def nodos(ctx):
-        expr = ctx if ctx.startswith('/') else f'//({ctx})'
-        r = xp.evaluate(expr)
+    def nodos(seleccion):
+        r = xp.evaluate(seleccion)
         if r is None:
             return []
         return [r[i] for i in range(r.size)] if hasattr(r, 'size') else [r]
@@ -576,8 +596,12 @@ def validar(doc_path: Path, nss, patterns, proc, n_lineas=None, nombre=None):
     t0 = time.time()
     for pat_id, reglas in patterns:
         ya_casados = set()                    # first-match shadowing
-        for ctx, tests, conjunta, lote in reglas:
-            lista = nodos(ctx)
+        for ctx, tests, conjunta, lote, seleccion in reglas:
+            try:
+                lista = nodos(seleccion)
+            except Exception as e:             # (un contexto que no se evalúa)
+                errores[('(context)', ctx, str(e).strip())] += 1
+                continue
             de_lote = evaluar_lote(lote, len(tests), len(lista))
             for k, node in enumerate(lista):
                 if de_lote is not None:
@@ -725,7 +749,9 @@ def main():
                    'documents': resultados}, sys.stdout,
                   ensure_ascii=False, indent=1)
         print()
-    if mal_formados:
+    # 3: algún documento no está bien formado, o alguna regla no se pudo
+    # evaluar (el veredicto está incompleto); 1: infracciones; 0: nada.
+    if mal_formados or any(r.get('xpath_errors') for r in resultados):
         sys.exit(3)
     sys.exit(1 if any(r.get('violations') for r in resultados) else 0)
 

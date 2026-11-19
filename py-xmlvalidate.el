@@ -4,7 +4,7 @@
 ;; Copyright (C) 2026 Nicolas Vaughan <nicolasvaughan@proton.me>
 
 ;; Author: Nicolas Vaughan <nicolasvaughan@proton.me>
-;; Version: 0.3.0
+;; Version: 0.4.0
 ;; Package-Requires: ((emacs "31.1"))
 ;; Keywords: languages, xml, tools
 ;; URL: https://codeberg.org/nivaca/py-xmlvalidate-emacs
@@ -685,26 +685,42 @@ stricter; the full check is still jing's.")
        (or (null rng-current-schema-file-name)        ; nxml's vacuous schema
            (equal rng-current-schema-file-name py-xmlvalidate--nxml-rnc))))
 
-(defun py-xmlvalidate--nxml-schema (used)
-  "Give nxml the RELAX NG schema USED by the check, as (PATH . TYPE)."
-  (when (and used (equal (cdr used) "rng") (car used)
-             (file-readable-p (car used)) (py-xmlvalidate--nxml-eligible-p))
-    (let* ((rng (car used))
-           (rnc (py-xmlvalidate--rnc-file rng)))
-      (cond
-       ((and (file-exists-p rnc) (not (file-newer-than-file-p rng rnc)))
-        (py-xmlvalidate--nxml-apply rnc))
-       ((gethash rnc py-xmlvalidate--converting)
-        (cl-pushnew (current-buffer) (gethash rnc py-xmlvalidate--converting)))
-       (t (py-xmlvalidate--convert rng rnc))))))
+(defvar-local py-xmlvalidate--rnc-force nil
+  "Non-nil: the next check converts the schema for nxml again.
+Set by `py-xmlvalidate-recreate-nxml-schema'.")
 
-(defun py-xmlvalidate--nxml-apply (rnc)
+(defun py-xmlvalidate--nxml-schema (used)
+  "Give nxml the RELAX NG schema USED by the check, as (PATH . TYPE).
+The compact copy is converted again when the RelaxNG file is newer,
+or when `py-xmlvalidate-recreate-nxml-schema' asked for it."
+  (let ((force py-xmlvalidate--rnc-force))
+    (setq py-xmlvalidate--rnc-force nil)
+    (if (and used (equal (cdr used) "rng") (car used)
+             (file-readable-p (car used)) (py-xmlvalidate--nxml-eligible-p))
+        (let* ((rng (car used))
+               (rnc (py-xmlvalidate--rnc-file rng)))
+          (cond
+           ((and (not force) (file-exists-p rnc) (not (file-newer-than-file-p rng rnc)))
+            (py-xmlvalidate--nxml-apply rnc))
+           ((gethash rnc py-xmlvalidate--converting)
+            (cl-pushnew (current-buffer) (gethash rnc py-xmlvalidate--converting)))
+           (t (py-xmlvalidate--convert rng rnc force))))
+      (when force
+        (message "py-xmlvalidate: %s"
+                 (cond ((null used) "the check found no schema, so nxml gets none")
+                       ((not (equal (cdr used) "rng"))
+                        (format "the schema is not RelaxNG (%s), so nxml gets none" (cdr used)))
+                       (t "nxml's schema was not recreated")))))))
+
+(defun py-xmlvalidate--nxml-apply (rnc &optional reload)
   "Set the compact schema RNC as the buffer's nxml schema.
-`rng-set-schema-file-1' is used, not `rng-set-schema-file', which
-would offer to save the schema's location in a schemas.xml file next
-to the document.  nxml revalidates by itself when the schema changes."
+With RELOAD, load it again even if it is already the buffer's
+schema (after it was converted again).  `rng-set-schema-file-1' is
+used, not `rng-set-schema-file', which would offer to save the
+schema's location in a schemas.xml file next to the document.  nxml
+revalidates by itself when the schema changes."
   (when (and (py-xmlvalidate--nxml-eligible-p)
-             (not (equal rng-current-schema-file-name rnc)))
+             (or reload (not (equal rng-current-schema-file-name rnc))))
     (condition-case err
         (progn
           (rng-set-schema-file-1 rnc)
@@ -712,8 +728,10 @@ to the document.  nxml revalidates by itself when the schema changes."
       (error
        (py-xmlvalidate--log (format "nxml could not load %s: %s" rnc (error-message-string err)))))))
 
-(defun py-xmlvalidate--convert (rng rnc)
-  "Convert RNG to the compact schema RNC with trang, then apply it."
+(defun py-xmlvalidate--convert (rng rnc &optional announce)
+  "Convert RNG to the compact schema RNC with trang, then apply it.
+Every buffer that waits for RNC or already uses it loads the new
+copy.  With ANNOUNCE, say so when it is done."
   (let ((command (py-xmlvalidate--trang-command)))
     (if (null command)
         (unless py-xmlvalidate--trang-warned
@@ -736,13 +754,23 @@ to the document.  nxml revalidates by itself when the schema changes."
                    (remhash rnc py-xmlvalidate--converting)
                    (if (and (eq (process-status p) 'exit) (eq (process-exit-status p) 0)
                             (file-exists-p out))
-                       (progn
+                       (let ((n 0))
                          (py-xmlvalidate--write-rnc out rnc)
-                         (dolist (b waiting)
-                           (when (buffer-live-p b)
-                             (with-current-buffer b (py-xmlvalidate--nxml-apply rnc)))))
+                         (dolist (b (buffer-list))
+                           (with-current-buffer b
+                             (when (or (memq b waiting)
+                                       (equal py-xmlvalidate--nxml-rnc rnc))
+                               (py-xmlvalidate--nxml-apply rnc t)
+                               (when (equal py-xmlvalidate--nxml-rnc rnc)
+                                 (setq n (1+ n))))))
+                         (when announce
+                           (message "py-xmlvalidate: nxml's schema recreated from %s (%d buffer%s)"
+                                    (file-name-nondirectory rng) n (if (= n 1) "" "s"))))
                      (py-xmlvalidate--log (format "trang could not convert %s:\n%s" rng
-                                                  (with-current-buffer log (buffer-string))))))
+                                                  (with-current-buffer log (buffer-string))))
+                     (when announce
+                       (message "py-xmlvalidate: trang could not convert %s; see %s"
+                                (file-name-nondirectory rng) py-xmlvalidate--log-buffer))))
                  (kill-buffer log)
                  (delete-directory tmpdir t))))
           (file-error
@@ -938,6 +966,29 @@ a downloaded schema in its cache for a day."
   (py-xmlvalidate--start-check))
 
 ;;;###autoload
+(defun py-xmlvalidate-recreate-nxml-schema ()
+  "Convert the document's RelaxNG schema for nxml again, and reload it.
+The compact copy that nxml uses is normally converted again only when
+the RelaxNG file is newer; this converts it now, with a new check,
+and reloads it in every buffer that uses it.  Useful when the cached
+copy is suspect, or after changing `py-xmlvalidate-trang'."
+  (interactive)
+  (unless (derived-mode-p 'nxml-mode)
+    (user-error "Only an nxml-mode buffer has an nxml schema to recreate"))
+  (unless py-xmlvalidate-nxml-schema
+    (user-error "The schema for nxml is turned off (`py-xmlvalidate-nxml-schema')"))
+  (unless (py-xmlvalidate--trang-command)
+    (user-error "No trang found (%s); see `py-xmlvalidate-trang'" py-xmlvalidate-trang))
+  (py-xmlvalidate--ensure-mode)
+  (py-xmlvalidate--require-trust)
+  (unless (py-xmlvalidate--nxml-eligible-p)
+    (user-error "This buffer's nxml schema was chosen otherwise (%s); it is not replaced"
+                (abbreviate-file-name rng-current-schema-file-name)))
+  (setq py-xmlvalidate--rnc-force t)
+  (message "py-xmlvalidate: recreating nxml's schema...")
+  (py-xmlvalidate--start-check))
+
+;;;###autoload
 (defun py-xmlvalidate-report ()
   "Show the full report of the visited file, with clickable lines.
 Runs py-xmlvalidate.py -v on the saved file, in a compilation
@@ -1003,7 +1054,9 @@ STATUS and MSG are as in `compilation-exit-message-function'."
   (if (eq status 'exit)
       (pcase code
         (0 '("valid: no violations\n" . "valid"))
-        (1 '("violations found\n" . "violations")))
+        (1 '("violations found\n" . "violations"))
+        (3 '("incomplete: a document not well formed, a rule that could not be evaluated, or an error (see above)\n" . "incomplete"))
+        (_ (cons msg (number-to-string code))))
     (cons msg (number-to-string code))))
 
 (defun py-xmlvalidate--report-file-name ()
