@@ -80,6 +80,7 @@
 (require 'compile)
 (require 'cl-lib)
 (require 'seq)
+(require 'xref)
 (require 'subr-x)
 (require 'lisp-mnt)
 
@@ -188,13 +189,14 @@ A role that names a level wins; otherwise the problem is an error."
     ((or "info" "information" "hint") :note)
     (_ :error)))
 
-(defun py-xmlvalidate--item (line message type origin &optional code col)
+(defun py-xmlvalidate--item (line message type origin &optional code col rules)
   "A problem as a plist: MESSAGE at LINE, of TYPE, found by ORIGIN.
 LINE is 1-based (nil when unknown), COL 0-based or nil.  TYPE is a
 Flymake type, ORIGIN \"Schematron\", \"RelaxNG\" or \"XML\", and
-CODE the Schematron pattern, if any."
+CODE the Schematron pattern, if any.  RULES are links to the rules
+behind it (see `py-xmlvalidate--rule-link')."
   (list :line line :col col :message message :type type
-        :origin origin :code code))
+        :origin origin :code code :rules rules))
 
 (defun py-xmlvalidate--malformed-items (message line)
   "Items for a document that is not well formed.
@@ -218,6 +220,17 @@ opened is reported too."
                 (cdr items)))))
     items))
 
+(defun py-xmlvalidate--rule-link (rule &optional what)
+  "A link to RULE, the hash table {file, line} of an assert or report.
+As a plist (:file :line :label); nil when RULE names no file.  WHAT
+starts the label (default \"The rule\")."
+  (let ((file (and rule (gethash "file" rule)))
+        (line (and rule (py-xmlvalidate--number (gethash "line" rule)))))
+    (and (stringp file)
+         (list :file file :line line
+               :label (format "%s: %s%s" (or what "The rule") (file-name-nondirectory file)
+                              (if line (format ", line %d" line) ""))))))
+
 (defun py-xmlvalidate--json-items (json)
   "Items from the parsed --json output JSON of py-xmlvalidate.py.
 JSON is a hash table, as `json-parse-string' returns it.  There is
@@ -240,7 +253,9 @@ only one document, the one being checked."
                         (py-xmlvalidate--severity (gethash "role" v))
                         "Schematron"
                         (let ((p (gethash "pattern" v)))
-                          (and (stringp p) (not (string-empty-p p)) p))))
+                          (and (stringp p) (not (string-empty-p p)) p))
+                        nil
+                        (delq nil (list (py-xmlvalidate--rule-link (gethash "rule" v))))))
                      (gethash "violations" doc)))
             (errs (append (gethash "xpath_errors" doc) nil)))
         (when errs
@@ -259,7 +274,16 @@ only one document, the one being checked."
                                                   (gethash "context" e) (gethash "error" e)
                                                   (gethash "nodes" e)))
                                         errs "\n"))
-                               :warning "Schematron")))))
+                               :warning "Schematron" nil nil
+                               (delq nil (mapcar
+                                          (lambda (e)
+                                            (py-xmlvalidate--rule-link
+                                             (gethash "rule" e)
+                                             (format "Failed: %s"
+                                                     (let ((m (gethash "message" e)))
+                                                       (if (and (stringp m) (not (string-empty-p m)))
+                                                           m (gethash "context" e))))))
+                                          errs)))))))
         items)))))
 
 (defun py-xmlvalidate--number (v)
@@ -463,13 +487,24 @@ started), stdout and stderr.  NAME names the process."
           (list (plist-get it :origin) (plist-get it :code) (plist-get it :message)))))
      items)))
 
+(defvar-local py-xmlvalidate--rules nil
+  "The problems of the last check that link to their rules.
+For `py-xmlvalidate-goto-rule'.")
+
 (defun py-xmlvalidate--check (done)
   "Check the buffer, then call DONE in it with the problems found.
 DONE gets the list of problems (see `py-xmlvalidate--item') and the
 schema the check used, as (PATH . TYPE), or nil when there was none.
 A check still under way in the buffer is cancelled first."
   (py-xmlvalidate--kill)
-  (let* ((file buffer-file-name)
+  (let* ((source (current-buffer))
+         (done (lambda (items used)
+                 (when (buffer-live-p source)
+                   (with-current-buffer source
+                     (setq py-xmlvalidate--rules
+                           (seq-filter (lambda (i) (plist-get i :rules)) items))))
+                 (funcall done items used)))
+         (file buffer-file-name)
          (tmpdir (make-temp-file "py-xmlvalidate-" t))
          (input (expand-file-name (if file (file-name-nondirectory file) "document.xml")
                                   tmpdir))
@@ -1153,6 +1188,37 @@ Also says which checker, Flycheck or Flymake, is used."
         (insert "py-xmlvalidate setup\n\n" (string-join (nreverse lines) "\n") "\n")
         (special-mode))
       (display-buffer (current-buffer)))))
+
+;;;###autoload
+(defun py-xmlvalidate-goto-rule ()
+  "Open the schema at the rule behind the Schematron error on this line.
+That is the assert or report that reported it, in the ODD or RelaxNG
+it came from (the file one edits), as py-xmlvalidate.py 1.21 and
+later say.  With several, choose one.  A problem with no line (rules
+that failed to evaluate) is taken as on the first line.  \\[xref-go-back]
+returns."
+  (interactive)
+  (let* ((here (line-number-at-pos))
+         (links (seq-mapcat (lambda (i) (plist-get i :rules))
+                            (seq-filter (lambda (i) (eql (or (plist-get i :line) 1) here))
+                                        py-xmlvalidate--rules)))
+         (link (cond
+                ((null links)
+                 (user-error "No Schematron error with a known rule on this line"))
+                ((null (cdr links)) (car links))
+                (t (let ((label (completing-read "Which rule? "
+                                                 (mapcar (lambda (l) (plist-get l :label)) links)
+                                                 nil t)))
+                     (seq-find (lambda (l) (equal (plist-get l :label) label)) links))))))
+    (unless (file-readable-p (plist-get link :file))
+      (user-error "The schema %s cannot be read" (plist-get link :file)))
+    (xref-push-marker-stack)
+    (find-file (plist-get link :file))
+    (goto-char (point-min))
+    (when (plist-get link :line)
+      (forward-line (1- (plist-get link :line))))
+    (back-to-indentation)
+    (message "%s" (plist-get link :label))))
 
 ;;;###autoload
 (defun py-xmlvalidate-about ()

@@ -251,6 +251,7 @@ feature off.
 | `py-xmlvalidate-report` | Full report of the saved file, in a buffer with links to the lines |
 | `py-xmlvalidate-trust-file` | Trusts the file, or its folder, after asking; starts checking it |
 | `py-xmlvalidate-check-setup` | Says whether Python, saxonche, lxml, the script, jing and trang are found, and which checker is used |
+| `py-xmlvalidate-goto-rule` | Open the schema at the rule behind the Schematron error on this line: the assert or report, in the ODD or RelaxNG you edit (`M-,` returns). Worth a key in `nxml-mode-map` |
 | `py-xmlvalidate-about` | What the package is: its version, author, licence and links, and what its `py-xmlvalidate.py` says of itself (`--about`) |
 | `py-xmlvalidate-show-log` | What `py-xmlvalidate.py` and jing printed (schema detection, downloads, cache) |
 

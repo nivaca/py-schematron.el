@@ -470,6 +470,46 @@ Flymake's own warnings are left out."
     (should (equal (py-xmlvalidate--downloaded-url nil (concat "[descarga] " url)) url))
     (should-not (py-xmlvalidate--downloaded-url nil ""))))
 
+(ert-deftest pyxv-rule-links ()
+  "Violations and XPath errors link to their rules; older JSON has none."
+  (let* ((json (json-parse-string
+                (json-serialize
+                 '((documents
+                    . [((file . "d.xml")
+                        (violations
+                         . [((pattern . "p") (context . "tei:p") (type . "assert") (role . "")
+                             (message . "m") (text . "m") (path . "/x") (line . 3)
+                             (rule . ((file . "/s/smed-schema.xml") (line . 186))))
+                            ((pattern . "p") (context . "tei:p") (type . "assert") (role . "")
+                             (message . "old") (text . "old") (path . "/y") (line . 4))])
+                        (xpath_errors
+                         . [((message . "broken") (context . "tei:q") (error . "XPTY0004")
+                             (nodes . 2) (rule . ((file . "/s/smed-schema.xml") (line . 200))))]))])))))
+         (items (py-xmlvalidate--json-items json)))
+    (should (equal (plist-get (nth 0 items) :rules)
+                   '((:file "/s/smed-schema.xml" :line 186
+                      :label "The rule: smed-schema.xml, line 186"))))
+    (should-not (plist-get (nth 1 items) :rules))
+    (should (equal (plist-get (nth 2 items) :rules)
+                   '((:file "/s/smed-schema.xml" :line 200
+                      :label "Failed: broken: smed-schema.xml, line 200"))))))
+
+(ert-deftest pyxv-real-goto-rule ()
+  "From the Schematron error on line 2 to the assert in schema.rng, and back."
+  (pyxv-test--with-env
+    (pyxv-test--write "invalid.xml" pyxv-test--invalid)
+    (let ((doc (pyxv-test--open "invalid.xml")))
+      (with-current-buffer doc
+        (should (pyxv-test--check))
+        (goto-char (point-min))
+        (should-error (py-xmlvalidate-goto-rule) :type 'user-error)   ; line 1: none
+        (forward-line 1))
+      (set-buffer doc)
+      (py-xmlvalidate-goto-rule)                ; (it visits the schema)
+      (should (equal (file-name-nondirectory buffer-file-name) "schema.rng"))
+      (should (looking-at-p "<sch:assert"))
+      (kill-buffer))))
+
 (ert-deftest pyxv-real-refresh ()
   "Refresh: a changed remote schema is downloaded again and applied."
   (pyxv-test--with-env

@@ -438,7 +438,9 @@ def leer_mensaje(t):
 def cargar_reglas(sch_path: Path):
     """Devuelve (namespaces, patterns); cada pattern es (id, [reglas]), cada
     regla (context, [tests], conjunta, lote, selección) y cada test (tipo,
-    xpath, mensaje, segmentos, role). Los <let> ya van integrados en las
+    xpath, mensaje, segmentos, role, ubicación), donde la ubicación es
+    {"file", "line"} del assert o report en sch_path (ubicar_en_fuente la
+    lleva al ODD o al RelaxNG de origen). Los <let> ya van integrados en las
     expresiones XPath de tests, segmentos y selección: los de schema y de
     pattern (por ese orden) ligados con la raíz del documento como contexto
     (con_globales), y los de la regla con su nodo de contexto (con_lets),
@@ -502,7 +504,9 @@ def cargar_reglas(sch_path: Path):
                             for k, v in segs]
                     tests.append((qn.localname,
                                   con_globales(globales, con_lets(lets, t.get('test'))),
-                                  msg, segs, t.get('role') or ''))
+                                  msg, segs, t.get('role') or '',
+                                  {'file': str(sch_path.resolve()), 'line': t.sourceline,
+                                   'kind': qn.localname, 'test': t.get('test')}))
                     crudos.append(t.get('test'))
                 elif qn.localname != 'let':
                     avisar_una_vez(f'el:{qn.localname}',
@@ -567,6 +571,37 @@ class DocumentoMalFormado(Exception):
     def __init__(self, msg, line=None):
         super().__init__(msg)
         self.line = line
+
+
+def ubicar_en_fuente(patterns, fuente: Path):
+    """Lleva la ubicación de cada assert y report del .sch (extraído de un
+    ODD o cosechado de un RelaxNG) a su origen, el archivo que se edita:
+    el n-ésimo assert/report de la fuente con el mismo tipo y la misma
+    expresión @test es el n-ésimo del .sch, pues extracción y cosecha
+    conservan el orden. Los que no se encuentran conservan su ubicación
+    en el .sch."""
+    try:
+        raiz = etree.parse(str(fuente)).getroot()
+    except Exception:
+        return
+    en_fuente = {}
+    for el in raiz.iter(S + 'assert', S + 'report',
+                        '{http://www.ascc.net/xml/schematron}assert',
+                        '{http://www.ascc.net/xml/schematron}report'):
+        clave = (etree.QName(el).localname, espacios(el.get('test') or ''))
+        en_fuente.setdefault(clave, []).append(el.sourceline)
+    vistos = Counter()
+    ruta = str(Path(fuente).resolve())
+    for _, reglas in patterns:
+        for _, tests, *_ in reglas:
+            for t in tests:
+                u = t[5]
+                clave = (u['kind'], espacios(u['test'] or ''))
+                n = vistos[clave]
+                vistos[clave] += 1
+                lineas = en_fuente.get(clave, [])
+                if n < len(lineas):
+                    u['file'], u['line'] = ruta, lineas[n]
 
 
 def validar(doc_path: Path, nss, patterns, proc, n_lineas=None, nombre=None):
@@ -676,7 +711,8 @@ def validar(doc_path: Path, nss, patterns, proc, n_lineas=None, nombre=None):
             try:
                 lista = nodos(seleccion)
             except Exception as e:             # (un contexto que no se evalúa)
-                errores[('(context)', ctx, str(e).strip())] += 1
+                u = tests[0][5] if tests else {'file': None, 'line': None}
+                errores[('(context)', ctx, str(e).strip(), u['file'], u['line'])] += 1
                 continue
             de_lote = evaluar_lote(lote, len(tests), len(lista))
             for k, node in enumerate(lista):
@@ -689,21 +725,22 @@ def validar(doc_path: Path, nss, patterns, proc, n_lineas=None, nombre=None):
                 ya_casados.add(path_id)
                 if de_lote is None:
                     valores = evaluar_juntos(node, conjunta, len(tests))
-                for i, (tipo, test, msg, segs, role) in enumerate(tests):
+                for i, (tipo, test, msg, segs, role, ubic) in enumerate(tests):
                     if valores is not None:
                         val = valores[i]
                     else:                      # (uno a uno: aísla los errores)
                         try:
                             val = en(node, xp.effective_boolean_value, test)
                         except Exception as e:
-                            errores[(msg, ctx, str(e).strip())] += 1
+                            errores[(msg, ctx, str(e).strip(), ubic['file'], ubic['line'])] += 1
                             continue
                     if val == (tipo == 'report'):
                         infracciones.append({
                             'pattern': pat_id, 'context': ctx, 'type': tipo,
                             'role': role, 'message': msg,
                             'text': interpolar(node, msg, segs),
-                            'path': path_id, 'line': None, 'xml_id': None})
+                            'path': path_id, 'line': None, 'xml_id': None,
+                            'rule': {'file': ubic['file'], 'line': ubic['line']}})
     segundos = time.time() - t0
     for inf in infracciones[:n_lineas]:
         inf['line'], xid = linea_e_id(inf['path'])
@@ -711,8 +748,9 @@ def validar(doc_path: Path, nss, patterns, proc, n_lineas=None, nombre=None):
     return {
         'file': str(doc_path),
         'violations': infracciones,
-        'xpath_errors': [{'message': m, 'context': c, 'error': e, 'nodes': n}
-                         for (m, c, e), n in errores.items()],
+        'xpath_errors': [{'message': m, 'context': c, 'error': e, 'nodes': n,
+                          'rule': {'file': f, 'line': l}}
+                         for (m, c, e, f, l), n in errores.items()],
         'seconds': round(segundos, 3),
     }
 
@@ -859,6 +897,8 @@ def main():
         else:
             sch = fuente
         nss, patterns = cargar_reglas(sch)
+        if tipo in ('odd', 'rng'):
+            ubicar_en_fuente(patterns, fuente)
         n_reglas = sum(len(r) for _, r in patterns)
         evento('schema', f"{len(patterns)} patterns, {n_reglas} reglas, "
                          f"prefijos: {', '.join(nss)}",

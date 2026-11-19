@@ -15,6 +15,12 @@ zip files, are on
   schema downloaded again* comes from the report's events. With an older
   `py-xmlvalidate.py` (named in `py-xmlvalidate-script`), stderr is still
   read as before.
+- **`M-x py-xmlvalidate-goto-rule`** opens the schema at the rule behind
+  the Schematron error on the current line: the assert or report that
+  reported it, in the ODD or RelaxNG it came from (the file you edit, not
+  the `.sch` made from it). With several, it asks which; `M-,` returns.
+  It works with Flymake and with Flycheck. Needs py-xmlvalidate.py 1.21,
+  which says where each rule is.
 - The tests run on GitHub every Monday too.
 
 ## 0.5.1 — 2026-11-18 (py-xmlvalidate.py 1.20)
