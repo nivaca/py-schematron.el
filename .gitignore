@@ -7,3 +7,4 @@
 __pycache__/
 # release bundles (tools/bundle-zip.py)
 dist/
+upstream/
