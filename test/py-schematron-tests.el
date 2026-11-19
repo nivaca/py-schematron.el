@@ -964,9 +964,14 @@ Flymake's own warnings are left out."
   "Prints what nxml's XSD code does with the cases its bugs get wrong.")
 
 (ert-deftest pysch-nxml-mending ()
-  "nxml's three bugs are mended as soon as it loads its XSD code."
+  "nxml's three bugs are mended when the mode starts in an nxml buffer.
+Loading the package alone changes nothing."
   (let ((out (pysch-test--fresh-emacs
-              '(require 'py-schematron) '(require 'rng-xsd) pysch-test--nxml-probe)))
+              '(require 'py-schematron) '(require 'nxml-mode) '(require 'rng-xsd)
+              '(princ (format "before=%S\n" py-schematron--nxml-fixes))
+              '(with-temp-buffer (nxml-mode) (py-schematron-mode 1))
+              pysch-test--nxml-probe)))
+    (should (string-match-p "^before=nil$" out))
     (should (string-match-p "^fixes=(whitespace unicode category-tables)$" out))
     (should (string-match-p "^P=(t t t)$" out))
     (should (string-match-p "^L=(t t t)$" out))
@@ -977,7 +982,8 @@ Flymake's own warnings are left out."
 (ert-deftest pysch-nxml-mending-off ()
   "With `py-schematron-fix-nxml' nil, nxml is left as it is, bugs and all."
   (let ((out (pysch-test--fresh-emacs
-              '(require 'py-schematron) '(setq py-schematron-fix-nxml nil)
+              '(require 'py-schematron) '(setq py-schematron-fix-nxml nil) '(require 'nxml-mode)
+              '(with-temp-buffer (nxml-mode) (py-schematron-mode 1))
               '(require 'rng-xsd) pysch-test--nxml-probe)))
     (should (string-match-p "^fixes=nil$" out))
     (should (string-match-p "^P=(t nil nil)$" out))         ; damaged after the first use

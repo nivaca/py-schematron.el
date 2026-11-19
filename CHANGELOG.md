@@ -8,6 +8,16 @@ zip files, are on
 [py-schematron](https://codeberg.org/nivaca/py-schematron/releases), as
 `emacs-vVERSION`.
 
+## 0.11.0 — 2026-11-19 (py-schematron.py 2.5)
+
+- The fixes for nxml's XSD datatypes now go in when the mode is turned on
+  in an nxml-mode buffer, before nxml compiles the schema to validate it,
+  instead of when nxml loads its XSD code: loading the package alone
+  changes nothing in Emacs, as packages should (`package-lint` warned
+  about the `with-eval-after-load` forms that did it).
+- `package-lint` runs on GitHub with the tests; it finds nothing.
+- Carries py-schematron.py 2.5.
+
 ## 0.10.1 — 2026-11-19
 
 - **An untrusted file was checked on Windows.** The Flymake backend left

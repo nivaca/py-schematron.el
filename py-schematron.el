@@ -4,7 +4,7 @@
 ;; Copyright (C) 2026 Nicolas Vaughan <nicolasvaughan@proton.me>
 
 ;; Author: Nicolas Vaughan <nicolasvaughan@proton.me>
-;; Version: 0.10.1
+;; Version: 0.11.0
 ;; Package-Requires: ((emacs "31.1"))
 ;; Keywords: languages, xml, tools
 ;; URL: https://codeberg.org/nivaca/py-schematron.el
@@ -773,8 +773,9 @@ with py-schematron.py and jing.  See `py-schematron-mode'."
 
 (defcustom py-schematron-fix-nxml t
   "Whether to mend nxml's XSD datatypes where the running Emacs needs it.
-When non-nil, as soon as nxml loads its XSD code, the package checks
-the running Emacs for these bugs and mends each one found:
+When non-nil, the first time the mode is turned on in an `nxml-mode'
+buffer, the package checks the running Emacs for these bugs and mends
+each one found:
 - building a Unicode category (\\p{P}, \\p{S}, \\p{C}) damages nxml's
   table of its last part, so # % ! @ ¿ and more are soon rejected;
 - the categories are those of Unicode 3.1 (2001), and leave out every
@@ -944,9 +945,15 @@ See `py-schematron--trim-collapsed' and `py-schematron-fix-nxml'."
       (push 'whitespace py-schematron--nxml-fixes)
       (py-schematron--log (format "nxml mended: %s" py-schematron--nxml-fixes)))))
 
-;; As soon as nxml loads its XSD code, before it compiles any schema.
-(with-eval-after-load 'xsd-regexp (py-schematron--fix-xsdre))
-(with-eval-after-load 'rng-xsd (py-schematron--fix-rng-xsd))
+(defun py-schematron--fix-nxml ()
+  "Mend nxml's XSD datatypes where this Emacs needs it.
+See `py-schematron-fix-nxml'.  Called when the mode is turned on in an
+`nxml-mode' buffer, before nxml compiles the schema to validate it, and
+when the package gives nxml a schema; loading the package changes
+nothing."
+  (when py-schematron-fix-nxml
+    (py-schematron--fix-xsdre)
+    (py-schematron--fix-rng-xsd)))
 
 (defun py-schematron-unload-function ()
   "Undo the package's mending of nxml when the package is unloaded.
@@ -1157,6 +1164,8 @@ named in a document can make Saxon read files and fetch URLs."
                       (> (buffer-size) py-schematron-live-max-size))))
         (setq py-schematron--using (py-schematron--frontend))
         (add-hook 'kill-buffer-hook #'py-schematron--kill nil t)
+        (when (derived-mode-p 'nxml-mode)
+          (py-schematron--fix-nxml))
         (unless (trusted-content-p)
           (py-schematron--warn-untrusted))
         (if (eq py-schematron--using 'flycheck)

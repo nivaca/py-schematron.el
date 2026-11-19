@@ -254,9 +254,10 @@ nxml reject values that the schema allows and jing accepts:
 - Values of `xsd:token` and similar types keep one space at either end
   when their whitespace is collapsed, so `ed=" #U2"` fails `teidata.word`.
 
-Each bug is checked for in the running Emacs, as soon as nxml loads its
-XSD code, and mended only if it is there, so an Emacs where it is fixed
-is left alone. `M-x py-schematron-about` says what was mended, and
+Each bug is checked for in the running Emacs the first time the mode is
+turned on in an nxml-mode buffer (loading the package alone changes
+nothing), and mended only if it is there, so an Emacs where it is fixed is
+left alone. `M-x py-schematron-about` says what was mended, and
 `py-schematron-fix-nxml` set to nil turns all this off. Unloading the
 package removes its advice. On 200 TEI editions, nxml mended in this way
 agrees with jing on every document. The bugs are reported to Emacs as

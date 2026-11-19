@@ -58,7 +58,7 @@ from collections import Counter
 from copy import deepcopy
 from pathlib import Path
 
-# Python 3.15 o posterior (como pide pyproject.toml). Se comprueba antes de
+# Python 3.15 o posterior (como dicen el README y los instaladores). Se comprueba antes de
 # importar lxml y saxonche, para que con un Python más antiguo el mensaje
 # sea claro: error de entorno, código 3 (la extensión de VS Code lo muestra).
 if sys.version_info < (3, 15):
@@ -69,7 +69,7 @@ if sys.version_info < (3, 15):
 from lxml import etree
 from saxonche import PySaxonProcessor
 
-__version__ = "2.2"
+__version__ = "2.5"
 
 SCH_NS = 'http://purl.oclc.org/dsdl/schematron'
 S = f'{{{SCH_NS}}}'
@@ -404,7 +404,7 @@ def detectar_esquema(doc_path: Path, refresh=False, base_dir: Path = None):
 # ---------------------------------------------------------------- esquema
 
 def leer_lets(el):
-    return [(l.get('name'), l.get('value')) for l in el.findall(S + 'let')]
+    return [(let.get('name'), let.get('value')) for let in el.findall(S + 'let')]
 
 
 def espacios(texto):
@@ -749,8 +749,8 @@ def validar(doc_path: Path, nss, patterns, proc, n_lineas=None, nombre=None):
         'file': str(doc_path),
         'violations': infracciones,
         'xpath_errors': [{'message': m, 'context': c, 'error': e, 'nodes': n,
-                          'rule': {'file': f, 'line': l}}
-                         for (m, c, e, f, l), n in errores.items()],
+                          'rule': {'file': f, 'line': linea}}
+                         for (m, c, e, f, linea), n in errores.items()],
         'seconds': round(segundos, 3),
     }
 
