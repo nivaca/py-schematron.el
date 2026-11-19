@@ -116,6 +116,8 @@
 (ert-deftest pysch-script-lookup ()
   "The script is found next to this file, through a Straight-style link,
 and in the folder above (the layout before 0.3.0)."
+  ;; (Straight links the file only on systems with symbolic links)
+  (skip-unless (not (eq system-type 'windows-nt)))
   (let* ((root (make-temp-file "pysch-lookup-" t))
          (clone (expand-file-name "repos/pkg/" root))
          (build (expand-file-name "build/pkg/" root))
@@ -512,13 +514,16 @@ Flymake's own warnings are left out."
 
 (ert-deftest pysch-installer-python ()
   "With `py-schematron-python' nil, the installer's Python if it exists, else python3."
-  (let* ((dir (make-temp-file "pysch-data-" t))
-         (process-environment (cons (concat "XDG_DATA_HOME=" dir) process-environment))
-         (system-type 'gnu/linux)
-         (python (expand-file-name "py-schematron/venv/bin/python" dir)))
+  ;; (this system's layout, with its home and data folders in a temporary one)
+  (let* ((dir (file-name-as-directory (make-temp-file "pysch-data-" t)))
+         (process-environment (append (list (concat "HOME=" dir) (concat "XDG_DATA_HOME=" dir)
+                                            (concat "LOCALAPPDATA=" dir))
+                                      process-environment))
+         (python (py-schematron--installer-python)))
     (unwind-protect
         (progn
-          (should (equal (py-schematron--installer-python) python))
+          (should (string-prefix-p (file-truename dir) (file-truename python)))
+          (should (string-match-p "py-schematron[/\\\\]venv" python))
           (let ((py-schematron-python nil))
             (should (equal (py-schematron--python) "python3"))      ; (not installed)
             (make-directory (file-name-directory python) t)

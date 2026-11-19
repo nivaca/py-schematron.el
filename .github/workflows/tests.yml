@@ -1,6 +1,9 @@
 # Byte-compiles the package (warnings are errors) and runs its ERT tests on
-# every push and pull request, with Flycheck, jing and trang, so that no
-# test is skipped.
+# every push and pull request: on Linux, with Flycheck, jing and trang, so
+# that no test is skipped, and on Windows, without jing and trang (their
+# tests skip themselves); also on macOS for release tags, the Monday run and
+# runs started by hand (GitHub often has no Mac free, and then cancels the
+# job after a long wait, which fails the whole run for nothing).
 
 name: Tests
 
@@ -18,11 +21,26 @@ permissions:
 
 jobs:
   tests:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')) && '["ubuntu-latest", "macos-latest", "windows-latest"]' || '["ubuntu-latest", "windows-latest"]') }}
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
 
-      - uses: purcell/setup-emacs@v8.0
+      - name: Emacs (Linux, macOS)
+        if: runner.os != 'Windows'
+        uses: purcell/setup-emacs@v8.0
+        with:
+          version: "31.1"
+
+      - name: Emacs (Windows)
+        if: runner.os == 'Windows'
+        uses: jcs090218/setup-emacs-windows@master
         with:
           version: "31.1"
 
@@ -30,12 +48,25 @@ jobs:
         with:
           python-version: "3.15"
 
-      - name: Install saxonche, lxml, jing, trang and Flycheck
+      - name: Install saxonche, lxml and Flycheck
         run: |
           python -m pip install saxonche lxml
+          git clone -q --depth 1 https://github.com/flycheck/flycheck.git "$RUNNER_TEMP/flycheck"
+
+      - name: Install jing and trang (Linux)
+        if: runner.os == 'Linux'
+        run: |
           sudo apt-get update -q
           sudo apt-get install -y -q jing trang
-          git clone -q --depth 1 https://github.com/flycheck/flycheck.git "$RUNNER_TEMP/flycheck"
+          echo "JING=/usr/bin/jing" >> "$GITHUB_ENV"
+          echo "PYSCH_TRANG=/usr/bin/trang" >> "$GITHUB_ENV"
+
+      - name: Install jing and trang (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install jing-trang
+          echo "JING=$(command -v jing)" >> "$GITHUB_ENV"
+          echo "PYSCH_TRANG=$(command -v trang)" >> "$GITHUB_ENV"
 
       - name: Byte-compile
         run: |
@@ -44,10 +75,8 @@ jobs:
           rm -f py-schematron.elc
 
       - name: Test
-        env:
-          FLYCHECK_DIR: ${{ runner.temp }}/flycheck
-          JING: /usr/bin/jing
-          PYSCH_TRANG: /usr/bin/trang
         run: |
-          export PYSCH_PYTHON="$(command -v python)"
+          export FLYCHECK_DIR="$RUNNER_TEMP/flycheck"
+          # (the Python's own path, which a Windows Emacs understands too)
+          export PYSCH_PYTHON="$(python -c 'import sys; print(sys.executable)')"
           emacs --batch -Q -L . -l test/py-schematron-tests.el -f ert-run-tests-batch-and-exit

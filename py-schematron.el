@@ -4,7 +4,7 @@
 ;; Copyright (C) 2026 Nicolas Vaughan <nicolasvaughan@proton.me>
 
 ;; Author: Nicolas Vaughan <nicolasvaughan@proton.me>
-;; Version: 0.9.0
+;; Version: 0.9.1
 ;; Package-Requires: ((emacs "31.1"))
 ;; Keywords: languages, xml, tools
 ;; URL: https://codeberg.org/nivaca/py-schematron.el
@@ -87,7 +87,8 @@
 (require 'lisp-mnt)
 
 ;; The package was py-xmlvalidate until 0.7.0: its options keep working
-;; under their former names for now.
+;; under their former names until 1.0, which will remove these aliases
+;; and py-xmlvalidate.el.
 (define-obsolete-variable-alias 'py-xmlvalidate-fix-nxml 'py-schematron-fix-nxml "0.8.0")
 (define-obsolete-variable-alias 'py-xmlvalidate-frontend 'py-schematron-frontend "0.8.0")
 (define-obsolete-variable-alias 'py-xmlvalidate-jing 'py-schematron-jing "0.8.0")

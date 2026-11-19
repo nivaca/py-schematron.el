@@ -8,6 +8,16 @@ zip files, are on
 [py-schematron](https://codeberg.org/nivaca/py-schematron/releases), as
 `emacs-vVERSION`.
 
+## 0.9.1 — 2026-11-19 (py-schematron.py 2.2)
+
+- **The former names will go in 1.0.** The `py-xmlvalidate-…` options and
+  commands (obsolete aliases since 0.8.0) and `py-xmlvalidate.el` will be
+  removed in version 1.0; a configuration that still uses them should
+  change to the `py-schematron` names.
+- The tests run on GitHub on Windows too at every push, and on macOS for
+  each release, besides Linux; two of them no longer assume a Unix system.
+- Carries py-schematron.py 2.2.
+
 ## 0.9.0 — 2026-11-19 (py-schematron.py 2.1)
 
 - **No Python to set up by hand.** py-schematron 2.1 has an installer for

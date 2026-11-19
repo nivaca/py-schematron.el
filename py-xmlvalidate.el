@@ -10,8 +10,9 @@
 
 ;; The package was called py-xmlvalidate until 0.7.0.  This file lets
 ;; (require 'py-xmlvalidate) and (use-package py-xmlvalidate ...) go on
-;; working for now: it loads py-schematron, whose options and commands
-;; keep their former names as obsolete aliases.  Use py-schematron.
+;; working until the package's 1.0, which will remove this file and the
+;; former names: it loads py-schematron, whose options and commands keep
+;; their former names as obsolete aliases until then.  Use py-schematron.
 
 ;;; Code:
 
