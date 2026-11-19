@@ -4,7 +4,7 @@
 ;; Copyright (C) 2026 Nicolas Vaughan <nicolasvaughan@proton.me>
 
 ;; Author: Nicolas Vaughan <nicolasvaughan@proton.me>
-;; Version: 0.4.0
+;; Version: 0.5.0
 ;; Package-Requires: ((emacs "31.1"))
 ;; Keywords: languages, xml, tools
 ;; URL: https://codeberg.org/nivaca/py-xmlvalidate-emacs
@@ -81,6 +81,7 @@
 (require 'cl-lib)
 (require 'seq)
 (require 'subr-x)
+(require 'lisp-mnt)
 
 (defgroup py-xmlvalidate nil
   "Schematron validation of XML/TEI documents with py-xmlvalidate.py."
@@ -1110,6 +1111,59 @@ Also says which checker, Flycheck or Flymake, is used."
       (let ((inhibit-read-only t))
         (erase-buffer)
         (insert "py-xmlvalidate setup\n\n" (string-join (nreverse lines) "\n") "\n")
+        (special-mode))
+      (display-buffer (current-buffer)))))
+
+;;;###autoload
+(defun py-xmlvalidate-about ()
+  "Show what this package is, its version, author, licence and links.
+Below, what the package's py-xmlvalidate.py says of itself (its
+--about): its version, and the Python and libraries it runs with."
+  (interactive)
+  (let* ((el (expand-file-name "py-xmlvalidate.el" py-xmlvalidate--directory))
+         (version (or (ignore-errors
+                        (with-temp-buffer (insert-file-contents el) (lm-version)))
+                      "?"))
+         (python (py-xmlvalidate--program py-xmlvalidate-python))
+         (script (py-xmlvalidate--script))
+         (program
+          (cond
+           ((not python)
+            (format "(the Python interpreter \"%s\" was not found; see `py-xmlvalidate-python')"
+                    py-xmlvalidate-python))
+           ((not (file-readable-p script))
+            (format "(py-xmlvalidate.py was not found: %s)" script))
+           (t (with-temp-buffer
+                (let ((code (call-process python nil t nil script "--about")))
+                  (if (eq code 0)
+                      (string-trim (buffer-string))
+                    (format "(%s --about failed: %s)" script
+                            (string-trim (buffer-string)))))))))
+         (link (lambda (url)
+                 (insert-text-button url 'action (lambda (_) (browse-url url))
+                                     'follow-link t 'help-echo (concat "Open " url)))))
+    (with-current-buffer (get-buffer-create "*py-xmlvalidate about*")
+      (let ((inhibit-read-only t))
+        (erase-buffer)
+        (insert (format "py-xmlvalidate for Emacs %s\n\n" version)
+                "Checks XML documents, TEI editions in particular, against the Schematron\n"
+                "rules of their schema as you type, with Flycheck or Flymake, and gives\n"
+                "nxml-mode the document's RelaxNG schema for completion.\n\n"
+                "Author:   Nicolas Vaughan <nicolasvaughan@proton.me>\n"
+                "Licence:  GNU General Public License, version 3 or later\n"
+                "Code:     ")
+        (funcall link "https://codeberg.org/nivaca/py-xmlvalidate-emacs")
+        (insert "\n          ")
+        (funcall link "https://github.com/nivaca/py-xmlvalidate-emacs")
+        (insert "\nProgram:  ")
+        (funcall link "https://codeberg.org/nivaca/py-xmlvalidate")
+        (insert (format "\n\nPackage:  %s\nChecker:  %s%s\n"
+                        (abbreviate-file-name (file-truename el))
+                        (py-xmlvalidate--frontend)
+                        (if (eq py-xmlvalidate-frontend 'auto) " (py-xmlvalidate-frontend is auto)" ""))
+                "\nThe package's py-xmlvalidate.py (--about):\n\n"
+                program "\n")
+        (goto-char (point-min))
         (special-mode))
       (display-buffer (current-buffer)))))
 

@@ -69,7 +69,7 @@ if sys.version_info < (3, 15):
 from lxml import etree
 from saxonche import PySaxonProcessor
 
-__version__ = "1.18"
+__version__ = "1.19"
 
 SCH_NS = 'http://purl.oclc.org/dsdl/schematron'
 S = f'{{{SCH_NS}}}'
@@ -665,11 +665,65 @@ def informe_texto(res, verbose=False, max_list=50):
 
 # ------------------------------------------------------------------ main
 
+def acerca() -> str:
+    """El texto de --about: qué es, de quién, con qué licencia y dónde
+    está, y con qué corre aquí (Python, saxonche, lxml, Saxon, el caché y
+    las hojas de estilo de TEI para -o)."""
+    from importlib.metadata import version, PackageNotFoundError
+
+    def de(paquete):
+        try:
+            return version(paquete)
+        except PackageNotFoundError:
+            return '?'
+    try:
+        with PySaxonProcessor(license=False) as proc:
+            saxon = proc.version
+    except Exception as e:                        # (no debería pasar)
+        saxon = f'no disponible ({e})'
+    xsl = (HERE / 'odds' / 'extract-isosch.xsl').is_file() and \
+        (HERE / 'common' / 'functions.xsl').is_file()
+    lxml_v = '.'.join(map(str, etree.LXML_VERSION[:3]))
+    libxml2 = '.'.join(map(str, etree.LIBXML_VERSION))
+    return f"""py-xmlvalidate.py {__version__}
+Validación ISO Schematron de documentos XML/TEI con Saxon (XPath 3.1): las
+reglas de un ODD, de un .sch o de un RelaxNG con reglas embebidas, con el
+esquema detectado por <?xml-model?>, como en oXygen.
+
+Autor:         Nicolas Vaughan <nicolasvaughan@proton.me>
+Licencia:      GNU General Public License, versión 3 o posterior
+Código:        https://codeberg.org/nivaca/py-xmlvalidate
+               https://github.com/nivaca/py-xmlvalidate
+Complementos:  https://codeberg.org/nivaca/py-xmlvalidate-vscode (VS Code)
+               https://codeberg.org/nivaca/py-xmlvalidate-emacs (Emacs)
+
+Este script:   {Path(__file__).resolve()}
+Python:        {sys.version.split()[0]} ({sys.executable})
+saxonche:      {de('saxonche')} ({saxon})
+lxml:          {lxml_v} (libxml2 {libxml2})
+Caché:         {HERE / '.schema-cache'}
+Hojas de estilo de TEI para -o: {'presentes' if xsl else 'ausentes'} (odds/ y common/ junto al script)"""
+
+
+class Acerca(argparse.Action):
+    """--about: imprime acerca() y termina, como --version."""
+
+    def __init__(self, option_strings, dest, **kwargs):
+        super().__init__(option_strings, dest, nargs=0, **kwargs)
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        print(acerca())
+        parser.exit()
+
+
 def main():
     ap = argparse.ArgumentParser(
         description='Validación Schematron de documentos TEI desde el terminal')
     ap.add_argument('--version', action='version',
                     version=f'%(prog)s {__version__}')
+    ap.add_argument('--about', action=Acerca,
+                    help='qué es este programa, de quién, con qué licencia y '
+                         'dónde está, y con qué Python y bibliotecas corre')
     ap.add_argument('docs', nargs='+', type=Path)
     g = ap.add_mutually_exclusive_group(required=False)
     g.add_argument('-o', '--odd', type=Path,

@@ -26,6 +26,7 @@
 
 (require 'ert)
 (require 'cl-lib)
+(require 'lisp-mnt)
 (require 'nxml-mode)
 (require 'rng-valid)
 (require 'rng-nxml)
@@ -843,5 +844,30 @@ open buffer reloads it, although the compact file keeps its name."
                                       (cadr (should-error (py-xmlvalidate-recreate-nxml-schema)
                                                           :type 'user-error))))))
           (should (<= (length warnings) 1)))))))
+
+;;;; About
+
+(ert-deftest pyxv-real-about ()
+  "The about buffer: the package's version from its header, author, links,
+and the program's own --about; a missing Python is said, not an error."
+  (pyxv-test--with-env
+    (let ((version (with-temp-buffer
+                     (insert-file-contents (expand-file-name "py-xmlvalidate.el" pyxv-test--repo))
+                     (lm-version)))
+          (py-xmlvalidate-script nil))
+      (py-xmlvalidate-about)
+      (with-current-buffer "*py-xmlvalidate about*"
+        (should (string-prefix-p (format "py-xmlvalidate for Emacs %s\n" version) (buffer-string)))
+        (should (string-search "Nicolas Vaughan <nicolasvaughan@proton.me>" (buffer-string)))
+        (should (string-match-p "^py-xmlvalidate\\.py [0-9]+\\.[0-9]+$" (buffer-string)))
+        (should (string-search "saxonche:" (buffer-string)))
+        (goto-char (point-min))
+        (search-forward "https://codeberg.org/nivaca/py-xmlvalidate-emacs")
+        (should (button-at (1- (point))))
+        (should buffer-read-only))
+      (let ((py-xmlvalidate-python "/no/such/python"))
+        (py-xmlvalidate-about)
+        (with-current-buffer "*py-xmlvalidate about*"
+          (should (string-search "was not found" (buffer-string))))))))
 
 ;;; py-xmlvalidate-tests.el ends here

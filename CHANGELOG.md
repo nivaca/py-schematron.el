@@ -8,6 +8,13 @@ zip files, are on
 [py-xmlvalidate](https://codeberg.org/nivaca/py-xmlvalidate/releases), as
 `emacs-vVERSION`.
 
+## 0.5.0 — 2026-11-18 (py-xmlvalidate.py 1.19)
+
+- `M-x py-xmlvalidate-about` shows what the package is: its version, author,
+  licence and links (which can be clicked), the checker in use, and what its
+  copy of `py-xmlvalidate.py` says of itself (its new `--about`: the
+  program's version, and the Python and libraries it runs with).
+
 ## 0.4.0 — 2026-11-18 (py-xmlvalidate.py 1.18)
 
 - `M-x py-xmlvalidate-recreate-nxml-schema` converts the document's
