@@ -8,6 +8,15 @@ zip files, are on
 [py-xmlvalidate](https://codeberg.org/nivaca/py-xmlvalidate/releases), as
 `emacs-vVERSION`.
 
+## 0.6.0 — 2026-11-19 (py-xmlvalidate.py 1.21)
+
+- The package no longer reads the program's Spanish messages on stderr:
+  the program's fatal errors come from its JSON, word for word, and *the
+  schema downloaded again* comes from the report's events. With an older
+  `py-xmlvalidate.py` (named in `py-xmlvalidate-script`), stderr is still
+  read as before.
+- The tests run on GitHub every Monday too.
+
 ## 0.5.1 — 2026-11-18 (py-xmlvalidate.py 1.20)
 
 - **nxml's punctuation bug is mended at its cause.** nxml rejected `#`,

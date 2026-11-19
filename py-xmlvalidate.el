@@ -4,7 +4,7 @@
 ;; Copyright (C) 2026 Nicolas Vaughan <nicolasvaughan@proton.me>
 
 ;; Author: Nicolas Vaughan <nicolasvaughan@proton.me>
-;; Version: 0.5.1
+;; Version: 0.6.0
 ;; Package-Requires: ((emacs "31.1"))
 ;; Keywords: languages, xml, tools
 ;; URL: https://codeberg.org/nivaca/py-xmlvalidate-emacs
@@ -314,6 +314,8 @@ content, without indentation and trailing spaces, is underlined."
 
 (defun py-xmlvalidate--explain-failure (stderr python)
   "The best explanation, from STDERR, of a run that gave no JSON.
+Since 1.21 py-xmlvalidate.py gives its own errors in JSON too; this
+is for Python's own failures, and for older scripts.
 PYTHON is the interpreter that was used."
   (if (string-match "No module named '?\\(saxonche\\|lxml\\)" stderr)
       (format "The Python interpreter \"%s\" does not have the '%s' library.  Set `py-xmlvalidate-python' to a Python that has saxonche and lxml, or install them into this one: %s -m pip install saxonche lxml"
@@ -507,8 +509,12 @@ A check still under way in the buffer is cancelled first."
              (and file (list "--as" file))
              (list input))
      (lambda (code stdout stderr)
-       (let ((json (and code (string-prefix-p "{" (string-trim-left stdout))
-                        (ignore-errors (json-parse-string stdout :null-object nil :false-object nil)))))
+       (let* ((parsed (and code (string-prefix-p "{" (string-trim-left stdout))
+                           (ignore-errors
+                             (json-parse-string stdout :null-object nil :false-object nil))))
+              ;; a report, or (since 1.21) the program's own fatal error
+              (json (and parsed (gethash "documents" parsed) parsed))
+              (fatal (and parsed (not json) (gethash "error" parsed))))
          (when refresh
            (py-xmlvalidate--say-refreshed stderr json))
          (if (null json)
@@ -516,10 +522,11 @@ A check still under way in the buffer is cancelled first."
               run done
               (list (py-xmlvalidate--item
                      nil
-                     (if code
-                         (py-xmlvalidate--explain-failure stderr python)
-                       (format "Could not run the Python interpreter \"%s\".  Set `py-xmlvalidate-python' to a Python that has saxonche and lxml (M-x py-xmlvalidate-check-setup)."
-                               python))
+                     (cond
+                      ((stringp fatal) fatal)
+                      (code (py-xmlvalidate--explain-failure stderr python))
+                      (t (format "Could not run the Python interpreter \"%s\".  Set `py-xmlvalidate-python' to a Python that has saxonche and lxml (M-x py-xmlvalidate-check-setup)."
+                               python)))
                      :error "py-xmlvalidate")))
            (let* ((items (py-xmlvalidate--json-items json))
                   (source (gethash "source" json))
@@ -552,11 +559,23 @@ A check still under way in the buffer is cancelled first."
   (py-xmlvalidate--cleanup run)
   (funcall done items used))
 
+(defun py-xmlvalidate--downloaded-url (json stderr)
+  "The URL py-xmlvalidate.py downloaded in a run, if any.
+From the events of its JSON report; a script older than 1.21 has no
+events, so then from its \"[descarga] URL\" line in STDERR."
+  (let ((events (if json (gethash "events" json 'none) 'none)))
+    (if (eq events 'none)
+        (and (string-match "^\\[descarga\\] \\([^ \t\n]+\\)" stderr)
+             (match-string 1 stderr))
+      (seq-some (lambda (e) (and (equal (gethash "kind" e) "download") (gethash "url" e)))
+                events))))
+
 (defun py-xmlvalidate--say-refreshed (stderr json)
-  "Tell what a --refresh run did, from its STDERR and JSON output."
+  "Tell what a --refresh run did, from its STDERR and JSON report."
   (cond
-   ((string-match "^\\[descarga\\] \\([^ \t\n]+\\)" stderr)
-    (message "py-xmlvalidate: schema downloaded again from %s" (match-string 1 stderr)))
+   ((py-xmlvalidate--downloaded-url json stderr)
+    (message "py-xmlvalidate: schema downloaded again from %s"
+             (py-xmlvalidate--downloaded-url json stderr)))
    (json
     (message "py-xmlvalidate: the schema is local (%s); nothing to download"
              (file-name-nondirectory (gethash "path" (gethash "source" json)))))

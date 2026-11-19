@@ -69,7 +69,7 @@ if sys.version_info < (3, 15):
 from lxml import etree
 from saxonche import PySaxonProcessor
 
-__version__ = "1.20"
+__version__ = "1.21"
 
 SCH_NS = 'http://purl.oclc.org/dsdl/schematron'
 S = f'{{{SCH_NS}}}'
@@ -79,16 +79,42 @@ HERE = Path(__file__).resolve().parent
 _avisados = set()
 
 
+# Lo que el script hace por el camino (descargas, caché, extracción...):
+# cada mensaje va a stderr, como siempre, y además queda aquí, para la
+# salida JSON ("events"), de modo que los complementos no tengan que leer
+# los mensajes de stderr. Las claves y los tipos están en inglés y son
+# estables; el texto ("message") es el mismo de stderr.
+EVENTOS = []
+ETIQUETAS = {'cache': 'caché', 'download': 'descarga', 'xml-model': 'xml-model',
+             'schema': 'esquema', 'extraction': 'extracción', 'harvest': 'cosecha',
+             'warning': 'aviso'}
+SALIDA_JSON = False          # (--json: también los errores fatales salen en JSON)
+
+
+def evento(tipo, msg, **datos):
+    """Informa de un paso: "[etiqueta] msg" a stderr, y un evento
+    {"kind": tipo, "message": msg, ...datos} para la salida JSON."""
+    print(f"[{ETIQUETAS[tipo]}] {msg}", file=sys.stderr)
+    EVENTOS.append({'kind': tipo, 'message': msg,
+                    **{k: (str(v) if isinstance(v, Path) else v) for k, v in datos.items()}})
+
+
 def avisar_una_vez(clave, msg):
     if clave not in _avisados:
         _avisados.add(clave)
-        print(f"[aviso] {msg}", file=sys.stderr)
+        evento('warning', msg)
 
 
 def morir(msg):
     """Error de entorno: mensaje a stderr y código de salida 3
-    (0 = limpio, 1 = infracciones, 2 = uso, 3 = entorno)."""
+    (0 = limpio, 1 = infracciones, 2 = uso, 3 = entorno). Con --json,
+    además, {"version", "error", "events"} por stdout, para que quien
+    lea el JSON tenga el mensaje sin buscarlo en stderr."""
     print(msg, file=sys.stderr)
+    if SALIDA_JSON:
+        json.dump({'version': __version__, 'error': msg, 'events': EVENTOS},
+                  sys.stdout, ensure_ascii=False, indent=1)
+        print()
     sys.exit(3)
 
 
@@ -133,10 +159,9 @@ def cache_al_dia(fuente: Path, derivado: Path) -> bool:
     frescura = max(fuente.stat().st_mtime, Path(__file__).stat().st_mtime)
     if derivado.exists() and derivado.stat().st_mtime >= frescura:
         if bien_formado(derivado):
-            print(f"[caché] {derivado.name} está al día", file=sys.stderr)
+            evento('cache', f"{derivado.name} está al día", file=derivado)
             return True
-        print(f"[aviso] {derivado.name} está dañado; se regenera",
-              file=sys.stderr)
+        evento('warning', f"{derivado.name} está dañado; se regenera", file=derivado)
     return False
 
 
@@ -203,7 +228,8 @@ def extraer_sch(odd: Path, proc: PySaxonProcessor) -> Path:
               f"--stylesheets o TEI_STYLESHEETS, o en el config.toml de ODD2RNG "
               f"(véase README §2).")
     xsl = carpeta / 'odds' / 'extract-isosch.xsl'
-    print(f"[extracción] con las TEI Stylesheets de {carpeta} ({origen})", file=sys.stderr)
+    evento('extraction', f"con las TEI Stylesheets de {carpeta} ({origen})",
+           stylesheets=carpeta, origin=origen)
     exe = proc.new_xslt30_processor().compile_stylesheet(stylesheet_file=str(xsl))
     try:
         out = exe.transform_to_string(source_file=str(odd))
@@ -219,7 +245,7 @@ def extraer_sch(odd: Path, proc: PySaxonProcessor) -> Path:
             f"p5subset.xml, o valida contra su RelaxNG generado con -r "
             f"(véase README §7).")
     escribir_atomico(sch, out.encode('utf-8'))
-    print(f"[extracción] {odd.name} -> {sch.name}", file=sys.stderr)
+    evento('extraction', f"{odd.name} -> {sch.name}", source=odd.resolve(), file=sch.resolve())
     return sch
 
 
@@ -269,8 +295,8 @@ def sch_desde_rng(rng: Path) -> Path:
               f"Corrupción de namespaces en la serialización; no se valida "
               f"contra un esquema mutilado.")
     escribir_atomico(out, datos)
-    print(f"[cosecha] {rng.name} -> {out.name} "
-          f"({n_pat} patterns, {n_ns} ns)", file=sys.stderr)
+    evento('harvest', f"{rng.name} -> {out.name} ({n_pat} patterns, {n_ns} ns)",
+           source=rng.resolve(), file=out.resolve(), patterns=n_pat, namespaces=n_ns)
     return out
 
 
@@ -292,12 +318,12 @@ def obtener_recurso(href, base_dir: Path, refresh=False) -> Path:
         dest = cache / nombre
         if dest.exists() and not refresh:
             if bien_formado(dest):
-                print(f"[caché] {href} ya descargado -> {dest.name} "
-                      f"(--refresh para forzar)", file=sys.stderr)
+                evento('cache', f"{href} ya descargado -> {dest.name} "
+                                f"(--refresh para forzar)", url=href, file=dest)
                 return dest
-            print(f"[aviso] la copia en caché de {href} está incompleta o "
-                  f"dañada; se vuelve a descargar", file=sys.stderr)
-        print(f"[descarga] {href}", file=sys.stderr)
+            evento('warning', f"la copia en caché de {href} está incompleta o "
+                              f"dañada; se vuelve a descargar", url=href, file=dest)
+        evento('download', href, url=href, file=dest)
         try:
             with urllib.request.urlopen(href, timeout=60) as r:
                 datos = r.read()
@@ -368,11 +394,10 @@ def detectar_esquema(doc_path: Path, refresh=False, base_dir: Path = None):
     no por extensión ni por lo que la PI declare. Los hrefs relativos se
     resuelven contra `base_dir` (por defecto, el directorio del documento)."""
     href = href_xml_model(doc_path)
-    print(f"[xml-model] esquema detectado: {href}", file=sys.stderr)
+    evento('xml-model', f"esquema detectado: {href}", href=href)
     local = obtener_recurso(href, base_dir or doc_path.parent, refresh)
     tipo = clasificar_esquema(local)
-    print(f"[xml-model] clasificado por contenido como: {tipo}",
-          file=sys.stderr)
+    evento('xml-model', f"clasificado por contenido como: {tipo}", type=tipo, file=local)
     return local, tipo
 
 
@@ -806,8 +831,9 @@ def main():
                          'usa para validar el texto sin guardar a partir de '
                          'una copia temporal')
     args = ap.parse_args()
-    global HOJAS_TEI
+    global HOJAS_TEI, SALIDA_JSON
     HOJAS_TEI = args.stylesheets
+    SALIDA_JSON = args.json
     if args.como and len(args.docs) != 1:
         ap.error('--as requiere exactamente un documento')
     base = args.como.resolve().parent if args.como else None
@@ -824,8 +850,8 @@ def main():
         else:
             fuente, tipo = detectar_esquema(args.docs[0], args.refresh, base)
             if len(args.docs) > 1:
-                print("[aviso] esquema detectado del PRIMER documento; se "
-                      "aplica a todos los de esta invocación", file=sys.stderr)
+                evento('warning', "esquema detectado del PRIMER documento; se "
+                                  "aplica a todos los de esta invocación")
         if tipo == 'odd':
             sch = extraer_sch(fuente, proc)
         elif tipo == 'rng':
@@ -834,8 +860,10 @@ def main():
             sch = fuente
         nss, patterns = cargar_reglas(sch)
         n_reglas = sum(len(r) for _, r in patterns)
-        print(f"[esquema] {len(patterns)} patterns, {n_reglas} reglas, "
-              f"prefijos: {', '.join(nss)}", file=sys.stderr)
+        evento('schema', f"{len(patterns)} patterns, {n_reglas} reglas, "
+                         f"prefijos: {', '.join(nss)}",
+               file=Path(sch).resolve(), patterns=len(patterns), rules=n_reglas,
+               prefixes=list(nss))
         for d in args.docs:
             try:
                 res = validar(d, nss, patterns, proc,
@@ -858,7 +886,7 @@ def main():
         json.dump({'version': __version__, 'schema': str(sch),
                    'source': {'path': str(Path(fuente).resolve()),
                               'type': tipo},
-                   'documents': resultados}, sys.stdout,
+                   'documents': resultados, 'events': EVENTOS}, sys.stdout,
                   ensure_ascii=False, indent=1)
         print()
     # 3: algún documento no está bien formado, o alguna regla no se pudo

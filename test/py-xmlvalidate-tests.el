@@ -436,6 +436,40 @@ Flymake's own warnings are left out."
         (should (string-match-p "Could not run the Python interpreter \"/no/such/python\""
                                 (flymake-diagnostic-text (car ds))))))))
 
+(ert-deftest pyxv-real-fatal-error ()
+  "The program's own fatal error comes from its JSON, word for word."
+  (pyxv-test--with-env
+    (pyxv-test--write "valid.xml" (concat pyxv-test--pi "\n<TEI xmlns=\"http://www.tei-c.org/ns/1.0\">\n<p>a</p>\n</TEI>\n"))
+    (with-current-buffer (pyxv-test--open "valid.xml")
+      (let* ((py-xmlvalidate-schema (expand-file-name "missing.sch" pyxv-test--dir))
+             (py-xmlvalidate-schema-type 'sch)
+             (ds (pyxv-test--check)))
+        (should (= (length ds) 1))
+        (should (string-match-p "missing\\.sch" (flymake-diagnostic-text (car ds))))
+        (should-not (string-match-p "^\\[" (flymake-diagnostic-text (car ds))))))))
+
+(ert-deftest pyxv-downloaded-url ()
+  "The URL of a download: from the report's events, or an older script's stderr."
+  (let ((report (lambda (events)
+                  (json-parse-string (json-serialize
+                                      `((documents . []) ,@(and events `((events . ,events))))))))
+        (url "https://example.org/s.rng"))
+    (should (equal (py-xmlvalidate--downloaded-url
+                    (funcall report `[((kind . "xml-model") (message . "m"))
+                                      ((kind . "download") (message . ,url) (url . ,url))])
+                    "")
+                   url))
+    ;; events without a download: nothing was downloaded, whatever stderr says
+    (should-not (py-xmlvalidate--downloaded-url
+                 (funcall report `[((kind . "cache") (message . "m") (url . ,url))])
+                 (concat "[descarga] " url)))
+    ;; an older script: no events, so stderr
+    (should (equal (py-xmlvalidate--downloaded-url (funcall report nil)
+                                                   (concat "[xml-model] x\n[descarga] " url "\n"))
+                   url))
+    (should (equal (py-xmlvalidate--downloaded-url nil (concat "[descarga] " url)) url))
+    (should-not (py-xmlvalidate--downloaded-url nil ""))))
+
 (ert-deftest pyxv-real-refresh ()
   "Refresh: a changed remote schema is downloaded again and applied."
   (pyxv-test--with-env
