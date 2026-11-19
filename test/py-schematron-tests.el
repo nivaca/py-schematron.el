@@ -396,9 +396,10 @@ Flymake's own warnings are left out."
                              (flymake-disabled-backends) (flymake-running-backends)
                              (trusted-content-p) buffer-file-truename))
             ;; (Flymake lists the backend as disabled for an untrusted file;
-            ;; on Windows it does not, but nothing runs there either)
+            ;; on Windows it calls the backend, which then checks nothing)
+            ;; (and the package starts no check of its own)
             (if (eq system-type 'windows-nt)
-                (should-not (flymake-running-backends))
+                (should-not py-schematron--run)
               (should (flymake-disabled-backends)))
             (should (null (flymake-diagnostics))))
           ;; the commands explain instead of doing nothing
@@ -573,6 +574,28 @@ Flymake's own warnings are left out."
             (should (equal (py-schematron--python) python)))
           (let ((py-schematron-python "/my/python"))                 ; (a setting wins)
             (should (equal (py-schematron--python) "/my/python"))))
+      (delete-directory dir t))))
+
+(ert-deftest pysch-jing-command ()
+  "jing: a program, a jing.jar run with Java, a command line, or JING_JAR."
+  (let* ((dir (make-temp-file "pysch-jing-" t))
+         (jar (expand-file-name "jing.jar" dir))
+         (java (executable-find "java"))
+         (process-environment (cons "JING_JAR" process-environment)))  ; (unset)
+    (unwind-protect
+        (progn
+          (with-temp-file jar)
+          (let ((py-schematron-jing "/no/such/jing"))
+            (should-not (py-schematron--jing-command)))
+          (let ((py-schematron-jing (list (expand-file-name invocation-name invocation-directory)
+                                          "--batch")))                ; (any program will do)
+            (should (equal (cdr (py-schematron--jing-command)) '("--batch"))))
+          (when java                                                 ; (with Java)
+            (let ((py-schematron-jing jar))
+              (should (equal (py-schematron--jing-command) (list java "-jar" jar))))
+            (let ((py-schematron-jing "/no/such/jing")
+                  (process-environment (cons (concat "JING_JAR=" jar) process-environment)))
+              (should (equal (py-schematron--jing-command) (list java "-jar" jar))))))
       (delete-directory dir t))))
 
 (ert-deftest pysch-obsolete-names ()

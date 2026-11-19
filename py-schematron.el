@@ -4,7 +4,7 @@
 ;; Copyright (C) 2026 Nicolas Vaughan <nicolasvaughan@proton.me>
 
 ;; Author: Nicolas Vaughan <nicolasvaughan@proton.me>
-;; Version: 0.9.3
+;; Version: 0.10.0
 ;; Package-Requires: ((emacs "31.1"))
 ;; Keywords: languages, xml, tools
 ;; URL: https://codeberg.org/nivaca/py-schematron.el
@@ -174,8 +174,14 @@ Ignored when the schema is detected from the document."
   :safe #'booleanp)
 
 (defcustom py-schematron-jing "jing"
-  "The jing program, for the RelaxNG check."
-  :type 'string)
+  "The jing program, for the RelaxNG check.
+A program name or file name; a jing.jar, which is run with Java
+\(\"java -jar\"), as on Windows, which has no jing command; or a command
+line as a list, such as (\"java\" \"-jar\" \"~/jing/bin/jing.jar\").
+When the program is not found, the jing.jar named by the environment
+variable JING_JAR is used, if there is one and Java is installed."
+  :type '(choice (string :tag "Program or jing.jar")
+                 (repeat :tag "Command line" string)))
 
 (defcustom py-schematron-timeout 120
   "Seconds after which a check is abandoned."
@@ -615,12 +621,12 @@ A check still under way in the buffer is cancelled first."
                   (used (and source (cons (gethash "path" source) (gethash "type" source))))
                   (malformed (seq-some (lambda (d) (gethash "error" d))
                                        (gethash "documents" json))))
-             (if (and py-schematron-relaxng used
-                      (equal (cdr used) "rng")
-                      (py-schematron--program py-schematron-jing))
+             (if-let* ((jing (and py-schematron-relaxng used
+                                  (equal (cdr used) "rng")
+                                  (py-schematron--jing-command))))
                  (py-schematron--start
-                  run "py-schematron-jing" (py-schematron--program py-schematron-jing)
-                  (list (car used) input)
+                  run "py-schematron-jing" (car jing)
+                  (append (cdr jing) (list (car used) input))
                   (lambda (jcode jout jerr)
                     (py-schematron--finish
                      run done
@@ -959,6 +965,23 @@ The rebuilt Unicode categories stay, being correct."
   (expand-file-name
    (format "%s-%s.rnc" (substring (md5 (file-truename rng)) 0 12) (file-name-base rng))
    (locate-user-emacs-file "py-schematron/rnc/")))
+
+(defun py-schematron--jing-command ()
+  "The jing command as a list, or nil if it cannot be run.
+See `py-schematron-jing'."
+  (let* ((spec py-schematron-jing)
+         (java (lambda (jar)
+                 (let ((jar (expand-file-name jar)) (program (executable-find "java")))
+                   (and program (file-readable-p jar) (list program "-jar" jar))))))
+    (cond
+     ((consp spec)
+      (let ((program (py-schematron--program (car spec))))
+        (and program
+             (cons program (mapcar (lambda (a) (if (string-prefix-p "~" a) (expand-file-name a) a))
+                                   (cdr spec))))))
+     ((and (stringp spec) (string-suffix-p ".jar" spec t)) (funcall java spec))
+     ((and (stringp spec) (py-schematron--program spec)) (list (py-schematron--program spec)))
+     ((getenv "JING_JAR") (funcall java (getenv "JING_JAR"))))))
 
 (defun py-schematron--trang-command ()
   "The trang command as a list, or nil if it cannot be run."
@@ -1371,7 +1394,7 @@ Also says which checker, Flycheck or Flymake, is used."
   (interactive)
   (let* ((python (py-schematron--program (py-schematron--python)))
          (script (py-schematron--script))
-         (jing (py-schematron--program py-schematron-jing))
+         (jing (py-schematron--jing-command))
          (lines nil))
     (cl-flet ((say (ok text) (push (concat (if ok "  ok   " "  NO   ") text) lines)))
       (if (not python)
@@ -1389,8 +1412,9 @@ Also says which checker, Flycheck or Flymake, is used."
                          python python)))))
       (say (file-readable-p script)
            (format "Script: %s%s" script (if (file-readable-p script) "" " (missing; set `py-schematron-script')")))
-      (say jing (if jing (format "jing: %s" jing)
-                  (format "jing: \"%s\" not found; the RelaxNG check is skipped (optional)" py-schematron-jing)))
+      (say jing (if jing (format "jing: %s" (string-join jing " "))
+                  (format "jing: %S not found, nor a jing.jar in JING_JAR; the RelaxNG check is skipped (optional)"
+                          py-schematron-jing)))
       (let ((frontend (py-schematron--frontend)))
         (say t (format "Checker: %s%s" frontend
                        (if (eq py-schematron-frontend 'auto)

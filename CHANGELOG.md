@@ -8,6 +8,17 @@ zip files, are on
 [py-schematron](https://codeberg.org/nivaca/py-schematron/releases), as
 `emacs-vVERSION`.
 
+## 0.10.0 — 2026-11-19
+
+- **jing on Windows.** `py-schematron-jing` can name a `jing.jar`, which
+  the package runs with Java (`java -jar`), or a whole command line, as a
+  list; when the program is not found, the `jing.jar` named by the
+  variable `JING_JAR` is used. Windows has no `jing` command, so the
+  RelaxNG check could not run there before. `M-x py-schematron-check-setup`
+  shows the command it will use.
+- On Windows, the test of an untrusted file checks that nothing runs, as
+  Flymake there calls the backend instead of disabling it.
+
 ## 0.9.3 — 2026-11-19 (py-schematron.py 2.2)
 
 - `M-x py-schematron-trust-file` could stop with "Selecting deleted

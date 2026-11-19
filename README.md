@@ -64,8 +64,12 @@ Emacs does not install them for you.
    and then `(setopt py-schematron-python "~/.venvs/schematron/bin/python")`.
 
 3. **jing** (optional) for the RelaxNG check: `sudo dnf install jing`,
-   `sudo apt install jing`, or <https://relaxng.org/jclark/jing.html>.
-   Without it, only the Schematron rules are checked.
+   `sudo apt install jing`, or `brew install jing-trang`. On Windows,
+   install Java (`winget install EclipseAdoptium.Temurin.21.JRE`), unzip
+   `jing` from the [jing-trang releases](https://github.com/relaxng/jing-trang/releases),
+   and set `py-schematron-jing` to its `jing.jar` (or set the variable
+   `JING_JAR` to it); the package runs it with Java. Without jing, only the
+   Schematron rules are checked.
 
 4. **trang** (optional) to give nxml the schema; it needs Java. From this
    repository's folder (Straight's clone is in
@@ -306,7 +310,7 @@ The settings:
 | `py-schematron-schema` | `nil` | Schema to use instead of the `<?xml-model?>`; relative to the document |
 | `py-schematron-schema-type` | `rng` | Its type: `rng`, `sch` or `odd` |
 | `py-schematron-relaxng` | `t` | Also check the structure with jing, when the schema is RelaxNG |
-| `py-schematron-jing` | `"jing"` | The jing program |
+| `py-schematron-jing` | `"jing"` | The jing program, a `jing.jar` (run with Java), or a command line as a list; if it is not found, the `jing.jar` named by `JING_JAR` |
 | `py-schematron-timeout` | `120` | Seconds after which a check is abandoned |
 | `py-schematron-live-max-size` | `nil` | Larger buffers (in characters) are checked on opening and saving only |
 | `py-schematron-frontend` | `auto` | `flycheck`, `flymake`, or `auto` (Flycheck if installed) |
