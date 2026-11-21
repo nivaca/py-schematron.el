@@ -8,6 +8,14 @@ zip files, are on
 [py-schematron](https://codeberg.org/nivaca/py-schematron/releases), as
 `emacs-vVERSION`.
 
+## 1.0.1 — 2026-11-21 (py-schematron.py 2.7)
+
+- `docs/THIRD-PARTY.md` (and `docs/THIRD-PARTY_es.md`, in Spanish): the
+  open-source software the package uses, and the licence of each: Emacs,
+  Flycheck, Python, saxonche, lxml, jing, trang, the TEI Stylesheets, and
+  the tools used to test it. None of it is distributed with the package.
+- Carries py-schematron.py 2.7.
+
 ## 1.0.0 — 2026-11-19 (py-schematron.py 2.6)
 
 - **The former names are gone**, as announced in 0.8.0: the

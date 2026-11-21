@@ -19,7 +19,8 @@ version 3 or later, like Emacs itself and Flycheck, which it uses when it
 is installed.  The program it runs, py-schematron.py, is under the same
 licence, and uses Saxon HE, through saxonche (Mozilla Public License 2.0),
 and lxml (BSD licence).  jing and trang, by James Clark, are under a BSD
-licence.
+licence.  The full list, with the tools used to test it, is in
+`docs/THIRD-PARTY.md`.
 
 Nicolas Vaughan is Associate Professor of Literature at the School of Arts
 and Humanities of the Universidad de los Andes, Bogotá, Colombia.

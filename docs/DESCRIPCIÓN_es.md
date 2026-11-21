@@ -1,4 +1,4 @@
-# py-schematron.el 1.0.0: descripción
+# py-schematron.el 1.0.1: descripción
 
 ## Análisis
 
@@ -54,6 +54,6 @@ Solo necesita internet para descargar los esquemas remotos la primera vez, o al 
 
 Fue desarrollado en Fedora Linux 45 con KDE Plasma, con Emacs 31, Python 3.15 y git, y probado en GitHub Actions en Linux, Windows y macOS.
 
-El código está en el repositorio py-schematron.el, publicado en Codeberg (https://codeberg.org/nivaca/py-schematron.el) y en GitHub. Cada versión se etiqueta `vA.B.C` y se publica en las dos forjas con un zip, mediante `tools/release.py`; el historial de cambios está en `CHANGELOG.md`.
+El código está en el repositorio py-schematron.el, publicado en Codeberg (https://codeberg.org/nivaca/py-schematron.el) y en GitHub. Cada versión se etiqueta `vA.B.C` y se publica en las dos forjas con un zip, mediante `tools/release.py`; el historial de cambios está en `CHANGELOG.md`. El paquete es software libre, bajo la GPL, versión 3 o posterior; el software que usa, con la licencia de cada uno, está en `docs/THIRD-PARTY_es.md`.
 
 Se instala desde el repositorio con Straight o con `package-vc-install`, como explica el README; con Straight, por ejemplo, `(use-package py-schematron :straight (:host codeberg :repo "nivaca/py-schematron.el") :hook (nxml-mode . py-schematron-mode))`. `M-x py-schematron-check-setup` dice qué Python, qué jing y qué trang va a usar. Los ajustes son opciones de Customize (`M-x customize-group RET py-schematron`), que se guardan en el archivo de inicio de Emacs. Las conversiones de esquemas para nxml quedan en `~/.emacs.d/py-schematron/`, y los esquemas descargados, en el caché `.schema-cache/` junto a la copia del programa.
