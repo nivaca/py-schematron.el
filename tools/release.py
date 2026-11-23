@@ -26,25 +26,36 @@ out which one it is in:
 The tag is vVERSION.  In order, the script:
 
   1. checks: on main, nothing uncommitted, a tag that is new or already on
-     this commit, release notes found, and (in a plugin) a copy of
-     py-schematron.py that is the same as ../py-schematron's;
+     this commit, release notes found, (in a plugin) a copy of
+     py-schematron.py that is the same as ../py-schematron's, the signing
+     key in gpg, and packaging/RPM-GPG-KEY-REPO, its public key;
   2. runs the tests (the unittest suites of the programs, the Emacs
      package's ERT tests, the extension's unit tests); for py-schematron,
      when $PY_SCHEMATRON_CORPUS names a corpus, also tools/corpus-check.py,
      which compares the results with the last release's on every document,
      and stops if any changed (--accept-corpus-changes, when that is meant);
-  3. makes the file;
-  4. tags the commit and pushes main and the tag to Codeberg and GitHub;
+  3. makes the file, and signs it with the project's key (SIGNING_KEY): a
+     detached armored signature FILE.asc, and dist/SHA256SUMS with its own
+     SHA256SUMS.asc; each signature is then checked as a user would check
+     it, in a temporary GNUPGHOME that has only the published public key,
+     and the release stops if one does not verify;
+  4. tags the commit with a signed tag (git tag --sign), checks it with
+     git tag --verify against the published key only, and pushes main and
+     the tag to Codeberg and GitHub; an unsigned tag already there, on the
+     same commit, is replaced by the signed one;
   5. makes the release on Codeberg (with tea) and on GitHub (with gh), with
-     the notes and the file;
-  6. downloads the file from both and compares it with the local one.
+     the notes, the file, the signatures, SHA256SUMS and the public key
+     (and brings the notes of a release that exists up to date);
+  6. downloads every file from both and compares it with the local one.
 
-Each step that is already done is skipped (a tag or a release that exists,
-a file already attached), so after a failure the script can simply be run
-again.  --dry-run does steps 1 to 3 and says what it would do after.
-Without --yes it asks before step 4.
+Each step that is already done is skipped (a signed tag or a release that
+exists, a signature that still verifies, a file already attached), so after
+a failure the script can simply be run again, and running it on a release
+made before signing adds what it lacks.  --dry-run does steps 1 to 3 and
+says what it would do after.  Without --yes it asks before step 4.
 
-It needs git, tea (logged in as "codeberg") and gh (logged in to GitHub).
+It needs git, gpg (with the signing key), tea (logged in as "codeberg") and
+gh (logged in to GitHub).
 """
 
 import sys
@@ -68,6 +79,11 @@ from pathlib import Path  # noqa: E402
 ROOT = Path(__file__).resolve().parent.parent
 OWNER = "nivaca"
 FORGES = {"Codeberg": "codeberg.org", "GitHub": "github.com"}
+# La clave con que se firma todo lo publicado: la misma en todos los
+# proyectos del autor (la que fija packaging/build-rpm.sh en los que hacen
+# un RPM).  $SIGNING_KEY la cambia solo en una prueba o un caso raro.
+SIGNING_KEY = "81870643CA221AF90C30554EBE6832CD35994948"
+SUMS = ROOT / "dist" / "SHA256SUMS"
 
 
 class Failure(Exception):
@@ -91,6 +107,92 @@ def run(*cmd, cwd=ROOT, env=None, capture=True, check=True):
 
 def git(*args, check=True):
     return run("git", *args, check=check).strip()
+
+
+# ------------------------------------------------------------------ the signatures
+
+def signing_key() -> str:
+    return os.environ.get("SIGNING_KEY") or SIGNING_KEY
+
+
+def public_key(repo: str) -> Path:
+    """The public key published with every release of REPO."""
+    return ROOT / "packaging" / f"RPM-GPG-KEY-{repo}"
+
+
+def key_fingerprints(public: Path) -> list[str]:
+    """The fingerprints of the keys (and subkeys) in the file PUBLIC."""
+    out = run("gpg", "--batch", "--show-keys", "--with-colons", str(public), cwd=ROOT)
+    return [line.split(":")[9] for line in out.splitlines() if line.startswith("fpr:")]
+
+
+class PublicOnly:
+    """A temporary GNUPGHOME that knows only PUBLIC, as a user's would after
+    importing the published key; entering gives the environment to run gpg
+    (or git tag --verify) in.  Never the system's keys."""
+
+    def __init__(self, public: Path):
+        self.public = public
+
+    def __enter__(self):
+        self.dir = tempfile.TemporaryDirectory(prefix="release-gpg-")
+        home = Path(self.dir.name)
+        home.chmod(0o700)          # (gpg quiere su carpeta solo para el usuario)
+        self.env = dict(os.environ, GNUPGHOME=str(home))
+        run("gpg", "--batch", "--quiet", "--import", str(self.public), env=self.env)
+        return self.env
+
+    def __exit__(self, *exc):
+        # Un GNUPGHOME nuevo arranca keyboxd o gpg-agent: se detienen antes
+        # de borrar la carpeta.
+        subprocess.run(["gpgconf", "--kill", "all"], env=self.env, capture_output=True)
+        self.dir.cleanup()
+
+
+def signature_ok(path: Path, env) -> bool:
+    asc = path.with_name(path.name + ".asc")
+    return asc.is_file() and subprocess.run(
+        ["gpg", "--batch", "--verify", str(asc), str(path)], env=env,
+        capture_output=True).returncode == 0
+
+
+def sign_files(files: list[Path], key: str, public: Path, sums: Path) -> list[Path]:
+    """Sign FILES and SUMS, which lists their SHA-256 as sha256sum -c reads it,
+    with KEY, and check every signature with only PUBLIC known.  A signature
+    that still verifies is kept, so that running again changes nothing.
+    Return what is published: the files, SUMS, the signatures and PUBLIC."""
+    names = [f.name for f in files]
+    if len(set(names)) != len(names):     # (SHA256SUMS va por nombre)
+        raise Failure("Two files to publish have the same name")
+    text = "".join(f"{sha256(f.read_bytes())}  {f.name}\n" for f in files)
+    if not sums.is_file() or sums.read_text(encoding="utf-8") != text:
+        sums.write_text(text, encoding="utf-8")
+    signed = files + [sums]
+    with PublicOnly(public) as env:
+        for path in signed:
+            if signature_ok(path, env):
+                say(f"  {path.name}.asc: kept, it verifies")
+                continue
+            p = subprocess.run(["gpg", "--batch", "--yes", "--local-user", key, "--armor",
+                                "--detach-sign", "--output", f"{path}.asc", str(path)],
+                               capture_output=True, text=True)
+            if p.returncode != 0:
+                raise Failure(f"gpg could not sign {path.name} with {key} (is the key's "
+                              f"passphrase cached?):\n{p.stderr.strip()}")
+            say(f"  {path.name}.asc: signed")
+        bad = [p.name for p in signed if not signature_ok(p, env)]
+    if bad:
+        raise Failure(f"These do not verify with the published key {public.name}: "
+                      + ", ".join(bad))
+    say(f"  every signature verifies with only {public.name}")
+    return signed + [p.with_name(p.name + ".asc") for p in signed] + [public]
+
+
+def tag_verifies(tag: str, public: Path) -> bool:
+    """Whether TAG is a signed tag that verifies with only PUBLIC known."""
+    with PublicOnly(public) as env:
+        return subprocess.run(["git", "tag", "--verify", tag], cwd=ROOT, env=env,
+                              capture_output=True).returncode == 0
 
 
 # ------------------------------------------------------------------ the three kinds
@@ -279,11 +381,19 @@ def tea_api(*args):
             time.sleep(3)
 
 
-def codeberg_release(k, tag, body, asset):
+def codeberg_release(k, tag, body, assets):
     path = f"/repos/{OWNER}/{k.repo}/releases"
     rel = tea_api(f"{path}/tags/{tag}")
     if rel.get("id"):
         say(f"  Codeberg: the release {tag} exists")
+        if (rel.get("body") or "").strip() != body.strip():
+            with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+                json.dump({"body": body}, f)
+            try:
+                tea_api("-X", "PATCH", f"{path}/{rel['id']}", "-d", f"@{f.name}")
+            finally:
+                os.unlink(f.name)
+            say("  Codeberg: its notes brought up to date")
     else:
         with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
             json.dump({"tag_name": tag, "name": tag, "body": body}, f)
@@ -296,57 +406,66 @@ def codeberg_release(k, tag, body, asset):
                           + ("\n(Is the repository's Releases unit on? PATCH has_releases true.)"
                              if "release" in str(rel.get("message", "")).lower() else ""))
         say(f"  Codeberg: release {tag} made")
-    if any(a.get("name") == asset.name for a in rel.get("assets") or []):
-        say(f"  Codeberg: {asset.name} is attached")
-    else:
-        run("tea", "releases", "assets", "create", "--login", "codeberg",
-            "--repo", f"{OWNER}/{k.repo}", tag, str(asset))
-        say(f"  Codeberg: {asset.name} attached")
+    attached = {a.get("name") for a in rel.get("assets") or []}
+    for asset in assets:
+        if asset.name in attached:
+            say(f"  Codeberg: {asset.name} is attached")
+        else:
+            run("tea", "releases", "assets", "create", "--login", "codeberg",
+                "--repo", f"{OWNER}/{k.repo}", tag, str(asset))
+            say(f"  Codeberg: {asset.name} attached")
 
 
-def github_release(k, tag, body, asset):
+def github_release(k, tag, body, assets):
     slug = f"{OWNER}/{k.repo}"
-    p = subprocess.run(["gh", "release", "view", tag, "-R", slug, "--json", "assets"],
+    p = subprocess.run(["gh", "release", "view", tag, "-R", slug, "--json", "assets,body"],
                        cwd=ROOT, capture_output=True, text=True)
-    if p.returncode != 0:
-        with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False) as f:
-            f.write(body)
-        try:
-            run("gh", "release", "create", tag, str(asset), "-R", slug, "--verify-tag",
+    with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False) as f:
+        f.write(body)
+    try:
+        if p.returncode != 0:
+            run("gh", "release", "create", tag, *map(str, assets), "-R", slug, "--verify-tag",
                 "--title", tag, "--notes-file", f.name)
-        finally:
-            os.unlink(f.name)
-        say(f"  GitHub: release {tag} made, with {asset.name}")
-        return
-    say(f"  GitHub: the release {tag} exists")
-    if any(a.get("name") == asset.name for a in json.loads(p.stdout).get("assets", [])):
-        say(f"  GitHub: {asset.name} is attached")
-    else:
-        run("gh", "release", "upload", tag, str(asset), "-R", slug)
-        say(f"  GitHub: {asset.name} attached")
+            say(f"  GitHub: release {tag} made, with {', '.join(a.name for a in assets)}")
+            return
+        say(f"  GitHub: the release {tag} exists")
+        rel = json.loads(p.stdout)
+        if (rel.get("body") or "").strip() != body.strip():
+            run("gh", "release", "edit", tag, "-R", slug, "--notes-file", f.name)
+            say("  GitHub: its notes brought up to date")
+    finally:
+        os.unlink(f.name)
+    attached = {a.get("name") for a in rel.get("assets", [])}
+    for asset in assets:
+        if asset.name in attached:
+            say(f"  GitHub: {asset.name} is attached")
+        else:
+            run("gh", "release", "upload", tag, str(asset), "-R", slug)
+            say(f"  GitHub: {asset.name} attached")
 
 
 def sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def verify(k, tag, asset):
-    local = sha256(asset.read_bytes())
-    for forge, host in FORGES.items():
-        url = f"https://{host}/{OWNER}/{k.repo}/releases/download/{tag}/{asset.name}"
-        for attempt in range(5):
-            try:
-                with urllib.request.urlopen(url, timeout=60) as r:
-                    remote = sha256(r.read())
-                break
-            except OSError as e:
-                if attempt == 4:
-                    raise Failure(f"{forge}: could not download {url}: {e}")
-                time.sleep(5)
-        if remote != local:
-            raise Failure(f"{forge}: {asset.name} differs from the local file "
-                          f"({remote[:16]} against {local[:16]})")
-        say(f"  {forge}: the download is the same file ({local[:16]})")
+def verify(k, tag, assets):
+    for asset in assets:
+        local = sha256(asset.read_bytes())
+        for forge, host in FORGES.items():
+            url = f"https://{host}/{OWNER}/{k.repo}/releases/download/{tag}/{asset.name}"
+            for attempt in range(5):
+                try:
+                    with urllib.request.urlopen(url, timeout=60) as r:
+                        remote = sha256(r.read())
+                    break
+                except OSError as e:
+                    if attempt == 4:
+                        raise Failure(f"{forge}: could not download {url}: {e}")
+                    time.sleep(5)
+            if remote != local:
+                raise Failure(f"{forge}: {asset.name} differs from the local file "
+                              f"({remote[:16]} against {local[:16]})")
+            say(f"  {forge}: {asset.name} is the same file ({local[:16]})")
 
 
 # ------------------------------------------------------------------ the steps
@@ -383,6 +502,15 @@ def checks(k, notes_file):
                               f"{main_script}; run tools/sync-plugins.py there and commit")
         else:
             say(f"  (no {main_script} to compare the copy of py-schematron.py with)")
+    key, public = signing_key(), public_key(k.repo)
+    if subprocess.run(["gpg", "--batch", "--list-secret-keys", key],
+                      capture_output=True).returncode != 0:
+        raise Failure(f"The signing key {key} is not in this machine's gpg")
+    if not public.is_file():
+        raise Failure(f"There is no {public.relative_to(ROOT)}, the public key published "
+                      f"with the release (gpg --armor --export {key} > it)")
+    if key not in key_fingerprints(public):
+        raise Failure(f"{public.relative_to(ROOT)} is not the public key of {key}")
     return version, tag, bool(tagged), notes
 
 
@@ -417,7 +545,15 @@ def main(argv=None):
         if not asset.is_file():
             raise Failure(f"The build did not make {asset}")
         say(f"  {asset.relative_to(ROOT)} ({asset.stat().st_size:,} bytes)")
-        body = f"{notes}\n\n{k.footer(asset.name)}\n"
+        say("== signatures")
+        key, public = signing_key(), public_key(k.repo)
+        assets = sign_files([asset], key, public, SUMS)
+        fpr = " ".join(key[i:i + 4] for i in range(0, len(key), 4))
+        body = (f"{notes}\n\n{k.footer(asset.name)}\n\n"
+                f"Every file is signed with the project's key ({fpr}): `FILE.asc` is the "
+                f"signature of `FILE`, and `SHA256SUMS`, signed too, lists their SHA-256. "
+                f"To check one: `gpg --import {public.name}`, then "
+                f"`gpg --verify {asset.name}.asc {asset.name}`.\n")
         if args.dry_run:
             say(f"== dry run: would tag {tag}, push main and {tag} to Codeberg and GitHub, "
                 f"and release with these notes:\n")
@@ -429,17 +565,30 @@ def main(argv=None):
                 say("Stopped; nothing was tagged or pushed.")
                 return
         say("== tag and push")
-        if not tagged:
-            git("tag", "-a", tag, "-m", tag)
-            say(f"  tagged {tag}")
+        if tagged and tag_verifies(tag, public):
+            say(f"  {tag} is signed")
+        else:
+            # Una etiqueta sin firma en este mismo commit (de antes de que se
+            # firmara todo) se reemplaza por una firmada.
+            git("tag", "--force", "--sign", "--local-user", key, "--message", tag, tag)
+            say(f"  tagged {tag}, signed" + (" (it was not)" if tagged else ""))
+        if not tag_verifies(tag, public):
+            raise Failure(f"git tag --verify {tag} fails with only {public.name}")
+        say(f"  git tag --verify {tag}: good, with only {public.name}")
+        local_tag = git("rev-parse", f"refs/tags/{tag}")
         for forge, host in FORGES.items():
-            git("push", f"git@{host}:{OWNER}/{k.repo}.git", "main", tag)
-            say(f"  {forge}: pushed main and {tag}")
+            url = f"git@{host}:{OWNER}/{k.repo}.git"
+            remote = git("ls-remote", url, f"refs/tags/{tag}").split("\t")[0]
+            # (si la forja tiene la etiqueta vieja, sin firma, se fuerza: es el mismo commit)
+            ref = f"+refs/tags/{tag}" if remote and remote != local_tag else tag
+            git("push", url, "main", ref)
+            say(f"  {forge}: pushed main and {tag}"
+                + (" (the signed tag replaces the old one)" if ref.startswith("+") else ""))
         say("== releases")
-        codeberg_release(k, tag, body, asset)
-        github_release(k, tag, body, asset)
+        codeberg_release(k, tag, body, assets)
+        github_release(k, tag, body, assets)
         say("== check the downloads")
-        verify(k, tag, asset)
+        verify(k, tag, assets)
         say(f"== {k.repo} {version} released")
     except Failure as e:
         sys.exit(f"release.py: {e}")
