@@ -8,6 +8,14 @@ archivos zip, están en
 [py-schematron](https://codeberg.org/nivaca/py-schematron/releases), como
 `emacs-vVERSION`.
 
+## 1.0.2 — 2026-11-23 (py-schematron.py 2.7)
+
+- Donde las categorías Unicode de nxml son las antiguas (bug#82282 de
+  Emacs), el paquete las reconstruye ahora con la tabla de la propiedad
+  general-category de Emacs, que da el nombre de la categoría de cada
+  carácter, como hace characters.el. Lo sugirió el mantenedor de Emacs.
+  Las categorías son las mismas de antes; solo el código es más simple.
+
 ## 1.0.1 — 2026-11-21 (py-schematron.py 2.7)
 
 - `docs/THIRD-PARTY_es.md` (y `docs/THIRD-PARTY.md`, en inglés): el

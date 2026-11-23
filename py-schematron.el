@@ -4,7 +4,7 @@
 ;; Copyright (C) 2026 Nicolas Vaughan <nicolasvaughan@proton.me>
 
 ;; Author: Nicolas Vaughan <nicolasvaughan@proton.me>
-;; Version: 1.0.1
+;; Version: 1.0.2
 ;; Package-Requires: ((emacs "31.1"))
 ;; Keywords: languages, xml, tools
 ;; URL: https://codeberg.org/nivaca/py-schematron.el
@@ -820,21 +820,18 @@ or the characters nxml's regexps can match stop short of U+10FFFF."
 (defun py-schematron--unicode-categories ()
   "The Unicode general categories nxml defines, from Emacs's own data.
 An alist (CATEGORY . RANGES), RANGES a range-list of xsd-regexp, from
-`unicode-category-table', for the characters up to U+10FFFF."
-  (let ((ranges nil)
-        (names (make-hash-table)))
+Emacs's table of the general-category property (as characters.el
+uses it), for the characters up to U+10FFFF."
+  (let ((ranges nil))
+    ;; La tabla da el nombre de la categoría (Lu, Ll...) de cada tramo.
     (map-char-table
-     (lambda (key value)
+     (lambda (key category)
        (let ((first (if (consp key) (car key) key))
              (last (if (consp key) (cdr key) key)))
-         (when (and value (<= first #x10FFFF))
-           (let ((name (or (gethash value names)
-                           (puthash value (get-char-code-property first 'general-category)
-                                    names))))
-             (when (memq name xsdre-gen-categories)
-               (push (xsdre-make-range first (min last #x10FFFF))
-                     (alist-get name ranges)))))))
-     unicode-category-table)
+         (when (and (memq category xsdre-gen-categories) (<= first #x10FFFF))
+           (push (xsdre-make-range first (min last #x10FFFF))
+                 (alist-get category ranges)))))
+     (unicode-property-table-internal 'general-category))
     (mapcar (lambda (name) (cons name (xsdre-make-range-list (alist-get name ranges))))
             xsdre-gen-categories)))
 

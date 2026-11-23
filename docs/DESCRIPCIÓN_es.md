@@ -1,4 +1,4 @@
-# py-schematron.el 1.0.1: descripción
+# py-schematron.el 1.0.2: descripción
 
 ## Análisis
 
@@ -26,7 +26,7 @@ Emacs 31 solo deja que Flymake corra sobre los archivos de `trusted-content`, sa
 
 ### Los errores de nxml
 
-Al construir una categoría Unicode como `\p{P}`, `xsdre-range-list-union` fusionaba las listas en su lugar y dañaba la tabla guardada de la última categoría; las categorías de nxml son de Unicode 3.1 y no pasan de U+FFFF, y los valores `xsd:token` conservaban un espacio en los extremos. El paquete prueba cada error en el Emacs en uso (por ejemplo, le da a la función dos listas nuevas y ve si las cambia) y lo corrige solo si está: con un *advice* que copia las listas, y reconstruyendo las categorías con los datos Unicode del propio Emacs, con cachés para que nxml no sea más lento. Los cuatro errores se informaron a Emacs (bug#82281 a bug#82284); los informes están en `upstream/`.
+Al construir una categoría Unicode como `\p{P}`, `xsdre-range-list-union` fusionaba las listas en su lugar y dañaba la tabla guardada de la última categoría; las categorías de nxml son de Unicode 3.1 y no pasan de U+FFFF, y los valores `xsd:token` conservaban un espacio en los extremos. El paquete prueba cada error en el Emacs en uso (por ejemplo, le da a la función dos listas nuevas y ve si las cambia) y lo corrige solo si está: con un *advice* que copia las listas, y reconstruyendo las categorías con los datos Unicode del propio Emacs, con cachés para que nxml no sea más lento. Desde la 1.0.2, por consejo del mantenedor de Emacs, las categorías se leen de la tabla de la propiedad general-category, que da el nombre de la categoría de cada carácter (como en characters.el). Los cuatro errores se informaron a Emacs (bug#82281 a bug#82284); los informes están en `upstream/`.
 
 ### Windows
 

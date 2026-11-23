@@ -116,7 +116,10 @@ left alone.  Version 0.7.0 mended the other bugs in the same way,
 rebuilding the categories from Emacs's own Unicode data, with caches so
 that nxml is no slower, and an option turns all of it off.  I reported
 the four bugs to Emacs (bug#82281 to bug#82284), each with a recipe from
-`emacs -Q`; the reports are kept in `upstream/`.
+`emacs -Q`; the reports are kept in `upstream/`.  In 1.0.2, on the Emacs
+maintainer's advice, the categories are read from Emacs's table of the
+general-category property, which names each character's category, as
+characters.el does, instead of looking the name up for each range.
 
 5. Following the program
 ------------------------
