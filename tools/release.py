@@ -50,7 +50,7 @@ The tag is vVERSION.  In order, the script:
   7. collects the deposit for Zenodo in dist/zenodo/ (tools/zenodo.py
      collect: the tree of the tag, signed, with SHA256SUMS and the public
      key, each signature checked with only that key) and uploads it to
-     Zenodo as a draft, with the token in $ZENODO_TOKEN, unless
+     Zenodo as a draft, with the token in $ZENODO_TOKEN or the keyring, unless
      --no-zenodo.  The draft is never published here: review it and
      publish it on Zenodo by hand.
 
@@ -62,7 +62,7 @@ says what it would do after.  Without --yes it asks before step 4.
 
 It needs git, gpg (with the signing key), tea (logged in as "codeberg"),
 gh (logged in to GitHub) and, unless --no-zenodo, a Zenodo token in
-$ZENODO_TOKEN.
+$ZENODO_TOKEN or the keyring.
 """
 
 import sys
@@ -91,6 +91,16 @@ FORGES = {"Codeberg": "codeberg.org", "GitHub": "github.com"}
 # un RPM).  $SIGNING_KEY la cambia solo en una prueba o un caso raro.
 SIGNING_KEY = "81870643CA221AF90C30554EBE6832CD35994948"
 SUMS = ROOT / "dist" / "SHA256SUMS"
+
+
+def zenodo_token() -> bool:
+    """Whether tools/zenodo.py finds a Zenodo token, in $ZENODO_TOKEN or
+    in the desktop keyring (secret-tool)."""
+    tool = os.path.join(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))), "tools", "zenodo.py")
+    done = subprocess.run([sys.executable, tool, "check-token"],
+                          capture_output=True, check=False)
+    return done.returncode == 0
 
 
 class Failure(Exception):
@@ -534,14 +544,15 @@ def main(argv=None):
                         help="py-schematron: go on although tools/corpus-check.py found changed results")
     parser.add_argument("--no-zenodo", action="store_true",
                         help="don't upload the deposit to Zenodo (by default it goes as a draft, never "
-                             "published, with the token in $ZENODO_TOKEN)")
+                             "published, with the token in $ZENODO_TOKEN or the keyring)")
     parser.add_argument("--notes", metavar="FILE",
                         help="the release notes, instead of those of the changelog or README")
     args = parser.parse_args(argv)
     try:
         # Sin token se para aquí, antes de hacer nada, y no al final
-        if not args.no_zenodo and not args.dry_run and not os.environ.get("ZENODO_TOKEN"):
-            raise Failure("the upload to Zenodo needs a token in $ZENODO_TOKEN; --no-zenodo leaves it out")
+        if not args.no_zenodo and not args.dry_run and not zenodo_token():
+            raise Failure("the upload to Zenodo needs a token (see tools/zenodo.py check-token); "
+                          "--no-zenodo leaves it out")
         k = kind()
         k.accept_corpus_changes = args.accept_corpus_changes
         say(f"== {k.repo}: checks")
