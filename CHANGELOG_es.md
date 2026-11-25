@@ -8,6 +8,18 @@ archivos zip, están en
 [py-schematron](https://codeberg.org/nivaca/py-schematron/releases), como
 `emacs-vVERSION`.
 
+## Sin publicar
+
+- `tools/zenodo.py` prepara el depósito de una versión en Zenodo. `collect`
+  deja en `dist/zenodo/` el árbol de la etiqueta como
+  `py-schematron.el-VERSIÓN-source.tar.gz`, con su firma, un `SHA256SUMS`
+  del depósito, firmado, y la clave pública, y comprueba cada firma con solo
+  esa clave (`--packages` añade los archivos de la versión). `upload` lo
+  sube a Zenodo como borrador, versión nueva del depósito si ya lo hay, y
+  nunca lo publica. `tools/release.py` reúne ahora el depósito después de la
+  etiqueta y lo sube como borrador, salvo con `--no-zenodo`. Los metadatos
+  están en `.zenodo.json`.
+
 ## 1.0.2 — 2026-11-23 (py-schematron.py 2.7)
 
 - Donde las categorías Unicode de nxml son las antiguas (bug#82282 de

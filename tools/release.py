@@ -46,7 +46,13 @@ The tag is vVERSION.  In order, the script:
   5. makes the release on Codeberg (with tea) and on GitHub (with gh), with
      the notes, the file, the signatures, SHA256SUMS and the public key
      (and brings the notes of a release that exists up to date);
-  6. downloads every file from both and compares it with the local one.
+  6. downloads every file from both and compares it with the local one;
+  7. collects the deposit for Zenodo in dist/zenodo/ (tools/zenodo.py
+     collect: the tree of the tag, signed, with SHA256SUMS and the public
+     key, each signature checked with only that key) and uploads it to
+     Zenodo as a draft, with the token in $ZENODO_TOKEN, unless
+     --no-zenodo.  The draft is never published here: review it and
+     publish it on Zenodo by hand.
 
 Each step that is already done is skipped (a signed tag or a release that
 exists, a signature that still verifies, a file already attached), so after
@@ -54,8 +60,9 @@ a failure the script can simply be run again, and running it on a release
 made before signing adds what it lacks.  --dry-run does steps 1 to 3 and
 says what it would do after.  Without --yes it asks before step 4.
 
-It needs git, gpg (with the signing key), tea (logged in as "codeberg") and
-gh (logged in to GitHub).
+It needs git, gpg (with the signing key), tea (logged in as "codeberg"),
+gh (logged in to GitHub) and, unless --no-zenodo, a Zenodo token in
+$ZENODO_TOKEN.
 """
 
 import sys
@@ -525,10 +532,16 @@ def main(argv=None):
     parser.add_argument("--skip-tests", action="store_true", help="do not run the tests")
     parser.add_argument("--accept-corpus-changes", action="store_true",
                         help="py-schematron: go on although tools/corpus-check.py found changed results")
+    parser.add_argument("--no-zenodo", action="store_true",
+                        help="don't upload the deposit to Zenodo (by default it goes as a draft, never "
+                             "published, with the token in $ZENODO_TOKEN)")
     parser.add_argument("--notes", metavar="FILE",
                         help="the release notes, instead of those of the changelog or README")
     args = parser.parse_args(argv)
     try:
+        # Sin token se para aquí, antes de hacer nada, y no al final
+        if not args.no_zenodo and not args.dry_run and not os.environ.get("ZENODO_TOKEN"):
+            raise Failure("the upload to Zenodo needs a token in $ZENODO_TOKEN; --no-zenodo leaves it out")
         k = kind()
         k.accept_corpus_changes = args.accept_corpus_changes
         say(f"== {k.repo}: checks")
@@ -555,8 +568,9 @@ def main(argv=None):
                 f"To check one: `gpg --import {public.name}`, then "
                 f"`gpg --verify {asset.name}.asc {asset.name}`.\n")
         if args.dry_run:
+            zenodo = "collect the deposit for Zenodo" + ("" if args.no_zenodo else " and upload it as a draft")
             say(f"== dry run: would tag {tag}, push main and {tag} to Codeberg and GitHub, "
-                f"and release with these notes:\n")
+                f"release with these notes, and {zenodo}:\n")
             say(body)
             return
         if not args.yes:
@@ -589,6 +603,14 @@ def main(argv=None):
         github_release(k, tag, body, assets)
         say("== check the downloads")
         verify(k, tag, assets)
+        # The deposit for Zenodo: always made, uploaded unless --no-zenodo (a draft, never published here)
+        say("== Zenodo")
+        zenodo = [sys.executable, str(ROOT / "tools" / "zenodo.py")]
+        run(*zenodo, "collect", "--tag", tag, capture=False)
+        if args.no_zenodo:
+            say("  not uploaded (--no-zenodo)")
+        else:
+            run(*zenodo, "upload", capture=False)
         say(f"== {k.repo} {version} released")
     except Failure as e:
         sys.exit(f"release.py: {e}")

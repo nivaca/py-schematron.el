@@ -10,7 +10,7 @@ py-schematron.el, its copy of py-schematron.py, the README, the
 changelog, the licence, the tests and tools/install-trang.py.  It is made
 from the files git tracks, so nothing that only lives in this folder gets
 in (compiled files, caches, editor lock files ...).  Left out as well: this
-script and tools/release.py, which are not part of the package,
+script, tools/release.py and tools/zenodo.py, which are not part of the package,
 packaging/ (the public key that signs the releases) and hidden files.  The scripts
 keep their permission to run.
 
@@ -31,7 +31,7 @@ DIST = os.path.join(HERE, "dist")
 NAME = "py-schematron.el"
 
 #  What is in the repository but not part of the program
-NOT_PART = ("tools/bundle-zip.py", "tools/release.py", "packaging/")
+NOT_PART = ("tools/bundle-zip.py", "tools/release.py", "tools/zenodo.py", "packaging/")
 
 
 def version() -> str:

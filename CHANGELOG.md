@@ -8,6 +8,18 @@ zip files, are on
 [py-schematron](https://codeberg.org/nivaca/py-schematron/releases), as
 `emacs-vVERSION`.
 
+## Unreleased
+
+- `tools/zenodo.py` prepares the deposit of a release for Zenodo. `collect`
+  puts in `dist/zenodo/` the tree of the tag as
+  `py-schematron.el-VERSION-source.tar.gz`, with its signature, a signed
+  `SHA256SUMS` of the deposit and the public key, and checks every signature
+  with only that key (`--packages` adds the files of the release). `upload`
+  sends it to Zenodo as a draft, a new version of the deposit if there is
+  one already, and never publishes it. `tools/release.py` now collects the
+  deposit after the tag and uploads it as a draft, unless `--no-zenodo`. The
+  metadata are in `.zenodo.json`.
+
 ## 1.0.2 — 2026-11-23 (py-schematron.py 2.7)
 
 - Where nxml's Unicode categories are old (Emacs bug#82282), the package

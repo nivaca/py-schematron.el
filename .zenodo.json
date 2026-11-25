@@ -1,0 +1,21 @@
+{
+  "title": "py-schematron.el",
+  "upload_type": "software",
+  "description": "<p>Schematron validation of XML and TEI documents in Emacs, with Flycheck or Flymake, by means of py-schematron.</p>",
+  "creators": [
+    {
+      "name": "Vaughan, Nicolas",
+      "affiliation": "Universidad de los Andes",
+      "orcid": "0000-0002-2877-0539"
+    }
+  ],
+  "license": "gpl-3.0-or-later",
+  "access_right": "open",
+  "keywords": [
+    "Emacs",
+    "TEI",
+    "XML",
+    "Schematron",
+    "validation"
+  ]
+}
