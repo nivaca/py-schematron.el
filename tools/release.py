@@ -50,9 +50,9 @@ The tag is vVERSION.  In order, the script:
   7. collects the deposit for Zenodo in dist/zenodo/ (tools/zenodo.py
      collect: the tree of the tag, signed, with SHA256SUMS and the public
      key, each signature checked with only that key) and uploads it to
-     Zenodo as a draft, with the token in $ZENODO_TOKEN or the keyring, unless
-     --no-zenodo.  The draft is never published here: review it and
-     publish it on Zenodo by hand.
+     Zenodo and publishes it (a new DOI), with the token in $ZENODO_TOKEN or
+     the keyring, unless --no-zenodo; with --zenodo-draft it is left as a
+     draft, to publish by hand.
 
 Each step that is already done is skipped (a signed tag or a release that
 exists, a signature that still verifies, a file already attached), so after
@@ -543,8 +543,10 @@ def main(argv=None):
     parser.add_argument("--accept-corpus-changes", action="store_true",
                         help="py-schematron: go on although tools/corpus-check.py found changed results")
     parser.add_argument("--no-zenodo", action="store_true",
-                        help="don't upload the deposit to Zenodo (by default it goes as a draft, never "
+                        help="don't upload the deposit to Zenodo (by default it is uploaded and "
                              "published, with the token in $ZENODO_TOKEN or the keyring)")
+    parser.add_argument("--zenodo-draft", action="store_true",
+                        help="upload it to Zenodo as a draft, not published")
     parser.add_argument("--notes", metavar="FILE",
                         help="the release notes, instead of those of the changelog or README")
     args = parser.parse_args(argv)
@@ -579,7 +581,8 @@ def main(argv=None):
                 f"To check one: `gpg --import {public.name}`, then "
                 f"`gpg --verify {asset.name}.asc {asset.name}`.\n")
         if args.dry_run:
-            zenodo = "collect the deposit for Zenodo" + ("" if args.no_zenodo else " and upload it as a draft")
+            upload = " and upload it as a draft" if args.zenodo_draft else " and publish it"
+            zenodo = "collect the deposit for Zenodo" + ("" if args.no_zenodo else upload)
             say(f"== dry run: would tag {tag}, push main and {tag} to Codeberg and GitHub, "
                 f"release with these notes, and {zenodo}:\n")
             say(body)
@@ -614,14 +617,14 @@ def main(argv=None):
         github_release(k, tag, body, assets)
         say("== check the downloads")
         verify(k, tag, assets)
-        # The deposit for Zenodo: always made, uploaded unless --no-zenodo (a draft, never published here)
+        # The deposit for Zenodo: always made, uploaded and published unless --no-zenodo (a draft with --zenodo-draft)
         say("== Zenodo")
         zenodo = [sys.executable, str(ROOT / "tools" / "zenodo.py")]
         run(*zenodo, "collect", "--tag", tag, capture=False)
         if args.no_zenodo:
             say("  not uploaded (--no-zenodo)")
         else:
-            run(*zenodo, "upload", capture=False)
+            run(*zenodo, "upload", *([] if args.zenodo_draft else ["--publish"]), capture=False)
         say(f"== {k.repo} {version} released")
     except Failure as e:
         sys.exit(f"release.py: {e}")
