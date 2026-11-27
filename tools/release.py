@@ -2,75 +2,77 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Nicolas Vaughan <nicolasvaughan@proton.me>
 # This file is part of py-schematron. See the LICENSE file for details.
-"""Release the current version: python3 tools/release.py [--dry-run]
+"""Publica la versión actual: python3 tools/release.py [--dry-run]
 [--yes] [--skip-tests] [--notes FILE]
 
-The same script serves four repositories (py-schematron; the plugins
-py-schematron.el and py-schematron-vscode, which get their copy from
-tools/sync-plugins.py; and ODD2RNG, whose copy is made by hand) and works
-out which one it is in:
+El mismo script sirve a cuatro repositorios (py-schematron; los complementos
+py-schematron.el y py-schematron-vscode, que reciben su copia de
+tools/sync-plugins.py; y ODD2RNG, cuya copia se hace a mano) y averigua en cuál
+está:
 
-  py-schematron         version: __version__ of py-schematron.py
-                         notes:   its row in the version history of README.md
-                         file:    py-schematron-v.VERSION.zip (tools/bundle-zip.py)
-  py-schematron.el   version: the Version header of py-schematron.el
-                         notes:   its section of CHANGELOG.md
-                         file:    py-schematron.el-v.VERSION.zip (tools/bundle-zip.py)
-  py-schematron-vscode  version: package.json
-                         notes:   its section of CHANGELOG.md
-                         file:    validate-schematron-VERSION.vsix (npm run package)
-  ODD2RNG                version: __version__ of odd2rng.py
-                         notes:   its section of CHANGELOG.md
-                         file:    ODD2RNG-v.VERSION.zip (tools/bundle-zip.py)
+  py-schematron         versión: el __version__ de py-schematron.py
+                        notas:   su fila en la historia de versiones de README.md
+                        archivo: py-schematron-v.VERSION.zip (tools/bundle-zip.py)
+  py-schematron.el      versión: la cabecera Version de py-schematron.el
+                        notas:   su sección de CHANGELOG.md
+                        archivo: py-schematron.el-v.VERSION.zip (tools/bundle-zip.py)
+  py-schematron-vscode  versión: package.json
+                        notas:   su sección de CHANGELOG.md
+                        archivo: validate-schematron-VERSION.vsix (npm run package)
+  ODD2RNG               versión: el __version__ de odd2rng.py
+                        notas:   su sección de CHANGELOG.md
+                        archivo: ODD2RNG-v.VERSION.zip (tools/bundle-zip.py)
 
-The file is made in build/release/, not in dist/, and so are its signature
-and SHA256SUMS; the tag is vVERSION.  In order, the script:
+El archivo se hace en build/release/, no en dist/, y allí van también su firma
+y SHA256SUMS; la etiqueta es vVERSION.  En orden, el script:
 
-  1. checks: on main, nothing uncommitted, a tag that is new or already on
-     this commit, release notes found, (in a plugin) a copy of
-     py-schematron.py that is the same as ../py-schematron's, the signing
-     key in gpg, and packaging/RPM-GPG-KEY-REPO, its public key;
-  2. runs the tests (the unittest suites of the programs, each file in a
-     process of its own, all at once, with tools/test.py; the Emacs
-     package's ERT tests; the extension's unit tests); for py-schematron,
-     when $PY_SCHEMATRON_CORPUS names a corpus, also tools/corpus-check.py,
-     which compares the results with the last release's on every document,
-     and stops if any changed (--accept-corpus-changes, when that is meant);
-  3. makes the file in build/release/, and signs it with the project's key
-     (SIGNING_KEY): a detached armored signature FILE.asc, and
-     build/release/SHA256SUMS with its own
-     SHA256SUMS.asc; each signature is then checked as a user would check
-     it, in a temporary GNUPGHOME that has only the published public key,
-     and the release stops if one does not verify;
-  4. tags the commit with a signed tag (git tag --sign), checks it with
-     git tag --verify against the published key only, and pushes main and
-     the tag to Codeberg and GitHub; an unsigned tag already there, on the
-     same commit, is replaced by the signed one;
-  5. makes the release on Codeberg (with tea) and on GitHub (with gh), with
-     the notes, the file, the signatures, SHA256SUMS and the public key
-     (and brings the notes of a release that exists up to date);
-  6. downloads every file from both and compares it with the local one;
-  7. collects the deposit for Zenodo in build/zenodo/ (tools/zenodo.py
-     collect: the tree of the tag, signed, with SHA256SUMS and the public
-     key, each signature checked with only that key) and uploads it to
-     Zenodo and publishes it (a new DOI), with the token in $ZENODO_TOKEN or
-     the keyring, unless --no-zenodo; with --zenodo-draft it is left as a
-     draft, to publish by hand;
-  8. deletes build/release/ and build/zenodo/ (and build/, if nothing else
-     is left in it): the forges and Zenodo have what they held, and none of
-     these projects keeps a package here (only an RPM would be kept, and
-     they make none), so dist/ stays empty.
+  1. comprueba: que está en main, sin nada fuera de un commit, con una etiqueta
+     nueva o ya puesta en este commit, que encontró las notas de la versión,
+     (en un complemento) que su copia de py-schematron.py es igual a la de
+     ../py-schematron, que la clave de firma está en gpg y que existe
+     packaging/RPM-GPG-KEY-REPO, su clave pública;
+  2. corre las pruebas (las suites de unittest de los programas, cada archivo
+     en un proceso propio, todos a la vez, con tools/test.py; las pruebas ERT
+     del paquete de Emacs; las pruebas unitarias de la extensión); en
+     py-schematron, si $PY_SCHEMATRON_CORPUS nombra un corpus, también
+     tools/corpus-check.py, que compara los resultados con los de la última
+     versión en cada documento, y se detiene si alguno cambió
+     (--accept-corpus-changes, cuando el cambio es querido);
+  3. hace el archivo en build/release/ y lo firma con la clave del proyecto
+     (SIGNING_KEY): una firma separada en ASCII, FILE.asc, y
+     build/release/SHA256SUMS con su propio SHA256SUMS.asc; luego comprueba
+     cada firma como lo haría un usuario, en un GNUPGHOME temporal que solo
+     tiene la clave pública publicada, y la publicación se detiene si alguna
+     no se comprueba;
+  4. pone en el commit una etiqueta firmada (git tag --sign), la comprueba con
+     git tag --verify contra la clave publicada y nada más, y sube main y la
+     etiqueta a Codeberg y a GitHub; una etiqueta sin firmar que ya esté allí,
+     en el mismo commit, se reemplaza por la firmada;
+  5. crea la versión en Codeberg (con tea) y en GitHub (con gh), con las notas,
+     el archivo, las firmas, SHA256SUMS y la clave pública (y pone al día las
+     notas de una versión que ya existe);
+  6. descarga cada archivo de las dos forjas y lo compara con el local;
+  7. reúne el depósito para Zenodo en build/zenodo/ (tools/zenodo.py collect:
+     el árbol de la etiqueta, firmado, con SHA256SUMS y la clave pública, cada
+     firma comprobada solo con esa clave), lo sube a Zenodo y lo publica (un
+     DOI nuevo), con el token de $ZENODO_TOKEN o del llavero, salvo con
+     --no-zenodo; con --zenodo-draft queda como borrador, para publicarlo a
+     mano;
+  8. borra build/release/ y build/zenodo/ (y build/, si no queda nada más en
+     él): las forjas y Zenodo tienen lo que contenían, y ninguno de estos
+     proyectos guarda aquí un paquete (solo se guardaría un RPM, y no hacen
+     ninguno), así que dist/ queda vacío.
 
-Each step that is already done is skipped (a signed tag or a release that
-exists, a signature that still verifies, a file already attached), so after
-a failure the script can simply be run again (build/release/ is deleted
-only at the end, once all is published), and running it on a release
-made before signing adds what it lacks.  --dry-run does steps 1 to 3 and
-says what it would do after.  Without --yes it asks before step 4.
+Cada paso ya hecho se salta (una etiqueta firmada o una versión que existe, una
+firma que sigue comprobándose, un archivo ya adjunto), así que después de un
+fallo basta con volver a correr el script (build/release/ solo se borra al
+final, cuando todo está publicado), y correrlo sobre una versión publicada
+antes de que hubiera firmas le añade lo que le falta.  --dry-run hace los pasos
+1 a 3 y dice lo que haría después.  Sin --yes, pregunta antes del paso 4.
 
-It needs git, gpg (with the signing key), tea (logged in as "codeberg"),
-gh (logged in to GitHub) and, unless --no-zenodo, a Zenodo token in
-$ZENODO_TOKEN or the keyring.
+Necesita git, gpg (con la clave de firma), tea (con la sesión "codeberg"), gh
+(con la sesión de GitHub abierta) y, salvo con --no-zenodo, un token de Zenodo
+en $ZENODO_TOKEN o en el llavero.
 """
 
 import sys

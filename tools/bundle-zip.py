@@ -2,23 +2,22 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Nicolas Vaughan <nicolasvaughan@proton.me>
 # This file is part of py-schematron.el. See the LICENSE file for details.
-"""Makes the release bundle in build/release/: python3 tools/bundle-zip.py
+"""Hace el zip de la versión en build/release/: python3 tools/bundle-zip.py
 
-build/release/py-schematron.el-v.VERSION.zip (the ;; Version: of
-py-schematron.el), with the package in a folder of the same name:
-py-schematron.el, its copy of py-schematron.py, the README, the
-changelog, the licence, the tests and tools/install-trang.py.  It is made
-from the files git tracks, so nothing that only lives in this folder gets
-in (compiled files, caches, editor lock files ...).  Left out as well: this
-script, tools/release.py and tools/zenodo.py, which are not part of the package,
-packaging/ (the public key that signs the releases) and hidden files.  The scripts
-keep their permission to run.
+build/release/py-schematron.el-v.VERSION.zip (el ;; Version: de
+py-schematron.el), con el paquete en una carpeta del mismo nombre:
+py-schematron.el, su copia de py-schematron.py, el README, el registro de
+cambios, la licencia, las pruebas y tools/install-trang.py.  Se hace con los
+archivos que git sigue, así que no entra nada que solo exista en esta carpeta
+(archivos compilados, cachés, archivos de bloqueo del editor...).  Quedan fuera
+también este script, tools/release.py y tools/zenodo.py, que no son parte del
+paquete, packaging/ (la clave pública que firma las versiones) y los archivos
+ocultos.  Los scripts conservan su permiso de ejecución.
 
-build/release is made in the program's folder if need be (tools/release.py
-publishes it from there, and deletes it at the end; dist/ is not used);
---output gives another folder.  If any of the bundled files has changes
-not committed yet, it says so, since the zip takes the files as they are
-now.
+build/release se crea en la carpeta del programa si hace falta (tools/release.py
+lo publica desde allí y lo borra al final; dist/ no se usa); --output da otra
+carpeta.  Si alguno de los archivos del zip tiene cambios que aún no están en un
+commit, lo advierte, porque el zip toma los archivos tal como están ahora.
 """
 
 import argparse

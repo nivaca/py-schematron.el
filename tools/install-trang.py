@@ -2,34 +2,35 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Nicolas Vaughan <nicolasvaughan@proton.me>
 # This file is part of py-schematron.el. See the LICENSE file for details.
-"""Download and install trang: python3 tools/install-trang.py [--bin FOLDER]
+"""Descarga e instala trang: python3 tools/install-trang.py [--bin FOLDER]
 [--version VERSION] [--force | --uninstall]
 
-trang converts RelaxNG schemas between their XML syntax (.rng) and their
-compact syntax (.rnc).  This Emacs package uses it to give nxml-mode the
-document's schema, which nxml can only read in the compact syntax.  It is
-a Java program, from the jing-trang project
-(https://github.com/relaxng/jing-trang), by the author of jing.
+trang convierte los esquemas RelaxNG entre su sintaxis XML (.rng) y su
+sintaxis compacta (.rnc).  Este paquete de Emacs lo usa para darle a nxml-mode
+el esquema del documento, que nxml solo lee en la sintaxis compacta.  Es un
+programa en Java, del proyecto jing-trang
+(https://github.com/relaxng/jing-trang), del autor de jing.
 
-The script downloads the release zip from GitHub, checks it against the
-SHA-1 published with it (and, for the default version, against the one
-written below), and installs, as jing is often installed:
+El script descarga el zip de la versión desde GitHub, lo comprueba con el
+SHA-1 publicado con él (y, en la versión por omisión, con el que está escrito
+más abajo) y lo instala como suele instalarse jing:
 
-    ~/bin/trang.d/   trang.jar, its manual and its licence
-    ~/bin/trang      a small shell script: exec java -jar .../trang.jar "$@"
+    ~/bin/trang.d/   trang.jar, su manual y su licencia
+    ~/bin/trang      un pequeño script de shell: exec java -jar .../trang.jar "$@"
 
-That is when ~/bin exists.  Otherwise the files go to ~/.local/share/trang/
-and the script to ~/.local/bin/trang.  --bin FOLDER installs in
-FOLDER (FOLDER/trang and FOLDER/trang.d/) instead.
+Eso, si existe ~/bin.  Si no, los archivos van a ~/.local/share/trang/ y el
+script a ~/.local/bin/trang.  --bin FOLDER instala en FOLDER (FOLDER/trang y
+FOLDER/trang.d/).
 
-Then `trang` runs from anywhere, if its folder is on the PATH, and the
-Emacs package finds it with its default setting.  At the end it converts a tiny schema, to check that it
-works.  Java is needed (the one jing uses will do).
+Desde entonces `trang` corre desde cualquier parte, si su carpeta está en el
+PATH, y el paquete de Emacs lo encuentra con su ajuste por omisión.  Al final
+convierte un esquema diminuto, para comprobar que funciona.  Hace falta Java
+(sirve el que use jing).
 
-An existing ~/bin/trang that this script did not write is left alone,
-unless --force is given.  --uninstall removes the script and the folder,
-if they are this script's.  Everything goes into the user's own folders:
-no administrator rights are needed.
+Un ~/bin/trang que ya exista y que no haya escrito este script se deja en paz,
+salvo con --force.  --uninstall borra el script y la carpeta, si son de este
+script.  Todo va a las carpetas del propio usuario: no hacen falta permisos de
+administrador.
 """
 
 import sys
