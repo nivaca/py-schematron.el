@@ -29,8 +29,9 @@ The tag is vVERSION.  In order, the script:
      this commit, release notes found, (in a plugin) a copy of
      py-schematron.py that is the same as ../py-schematron's, the signing
      key in gpg, and packaging/RPM-GPG-KEY-REPO, its public key;
-  2. runs the tests (the unittest suites of the programs, the Emacs
-     package's ERT tests, the extension's unit tests); for py-schematron,
+  2. runs the tests (the unittest suites of the programs, each file in a
+     process of its own, all at once, with tools/test.py; the Emacs
+     package's ERT tests; the extension's unit tests); for py-schematron,
      when $PY_SCHEMATRON_CORPUS names a corpus, also tools/corpus-check.py,
      which compares the results with the last release's on every document,
      and stops if any changed (--accept-corpus-changes, when that is meant);
@@ -250,7 +251,8 @@ class Program:
     accept_corpus_changes = False
 
     def test(self):
-        run(sys.executable, "-m", "unittest", "discover", "-s", "tests", capture=False)
+        # Las pruebas a la vez, cada archivo en un proceso propio (tools/test.py)
+        run(sys.executable, "tools/test.py", capture=False)
         check = ROOT / "tools" / "corpus-check.py"
         if not (check.is_file() and os.environ.get("PY_SCHEMATRON_CORPUS")):
             say("  (no corpus check: set PY_SCHEMATRON_CORPUS to the folders of your documents)")
@@ -368,7 +370,7 @@ class Odd2rng(Program):
         return (f"File: `{name}`, the script, its installer, the tests and the documentation.")
 
     def test(self):
-        run(sys.executable, "-m", "unittest", "discover", "-s", "tests", capture=False)
+        run(sys.executable, "tools/test.py", capture=False)
 
 
 def kind():
