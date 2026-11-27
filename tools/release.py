@@ -12,18 +12,19 @@ out which one it is in:
 
   py-schematron         version: __version__ of py-schematron.py
                          notes:   its row in the version history of README.md
-                         file:    dist/py-schematron-v.VERSION.zip (tools/bundle-zip.py)
+                         file:    py-schematron-v.VERSION.zip (tools/bundle-zip.py)
   py-schematron.el   version: the Version header of py-schematron.el
                          notes:   its section of CHANGELOG.md
-                         file:    dist/py-schematron.el-v.VERSION.zip (tools/bundle-zip.py)
+                         file:    py-schematron.el-v.VERSION.zip (tools/bundle-zip.py)
   py-schematron-vscode  version: package.json
                          notes:   its section of CHANGELOG.md
-                         file:    dist/validate-schematron-VERSION.vsix (npm run package)
+                         file:    validate-schematron-VERSION.vsix (npm run package)
   ODD2RNG                version: __version__ of odd2rng.py
                          notes:   its section of CHANGELOG.md
-                         file:    dist/ODD2RNG-v.VERSION.zip (tools/bundle-zip.py)
+                         file:    ODD2RNG-v.VERSION.zip (tools/bundle-zip.py)
 
-The tag is vVERSION.  In order, the script:
+The file is made in build/release/, not in dist/, and so are its signature
+and SHA256SUMS; the tag is vVERSION.  In order, the script:
 
   1. checks: on main, nothing uncommitted, a tag that is new or already on
      this commit, release notes found, (in a plugin) a copy of
@@ -35,8 +36,9 @@ The tag is vVERSION.  In order, the script:
      when $PY_SCHEMATRON_CORPUS names a corpus, also tools/corpus-check.py,
      which compares the results with the last release's on every document,
      and stops if any changed (--accept-corpus-changes, when that is meant);
-  3. makes the file, and signs it with the project's key (SIGNING_KEY): a
-     detached armored signature FILE.asc, and dist/SHA256SUMS with its own
+  3. makes the file in build/release/, and signs it with the project's key
+     (SIGNING_KEY): a detached armored signature FILE.asc, and
+     build/release/SHA256SUMS with its own
      SHA256SUMS.asc; each signature is then checked as a user would check
      it, in a temporary GNUPGHOME that has only the published public key,
      and the release stops if one does not verify;
@@ -48,16 +50,21 @@ The tag is vVERSION.  In order, the script:
      the notes, the file, the signatures, SHA256SUMS and the public key
      (and brings the notes of a release that exists up to date);
   6. downloads every file from both and compares it with the local one;
-  7. collects the deposit for Zenodo in dist/zenodo/ (tools/zenodo.py
+  7. collects the deposit for Zenodo in build/zenodo/ (tools/zenodo.py
      collect: the tree of the tag, signed, with SHA256SUMS and the public
      key, each signature checked with only that key) and uploads it to
      Zenodo and publishes it (a new DOI), with the token in $ZENODO_TOKEN or
      the keyring, unless --no-zenodo; with --zenodo-draft it is left as a
-     draft, to publish by hand.
+     draft, to publish by hand;
+  8. deletes build/release/ and build/zenodo/ (and build/, if nothing else
+     is left in it): the forges and Zenodo have what they held, and none of
+     these projects keeps a package here (only an RPM would be kept, and
+     they make none), so dist/ stays empty.
 
 Each step that is already done is skipped (a signed tag or a release that
 exists, a signature that still verifies, a file already attached), so after
-a failure the script can simply be run again, and running it on a release
+a failure the script can simply be run again (build/release/ is deleted
+only at the end, once all is published), and running it on a release
 made before signing adds what it lacks.  --dry-run does steps 1 to 3 and
 says what it would do after.  Without --yes it asks before step 4.
 
@@ -91,7 +98,24 @@ FORGES = {"Codeberg": "codeberg.org", "GitHub": "github.com"}
 # proyectos del autor (la que fija packaging/build-rpm.sh en los que hacen
 # un RPM).  $SIGNING_KEY la cambia solo en una prueba o un caso raro.
 SIGNING_KEY = "81870643CA221AF90C30554EBE6832CD35994948"
-SUMS = ROOT / "dist" / "SHA256SUMS"
+# Lo que se publica se hace y se firma en build/release/, no en dist/: en local solo se guardaría un RPM, y
+# estos proyectos no hacen ninguno.  Al final se borra, con build/zenodo/.
+OUT = ROOT / "build" / "release"
+SUMS = OUT / "SHA256SUMS"
+ZENODO_OUT = ROOT / "build" / "zenodo"  # (where tools/zenodo.py collects the deposit)
+
+
+def clean_up():
+    """Once all is published: build/release/ and build/zenodo/ deleted, and build/ too if nothing else is in it
+    (nothing is kept here; the forges and Zenodo have it all)."""
+    for folder in (OUT, ZENODO_OUT):
+        if folder.exists():
+            shutil.rmtree(folder)
+            say(f"  {folder.relative_to(ROOT)}/ deleted")
+    try:
+        OUT.parent.rmdir()          # (solo si quedó vacía)
+    except OSError:
+        pass
 
 
 def zenodo_token() -> bool:
@@ -243,7 +267,7 @@ class Program:
         return readme_notes(version)
 
     def asset(self, version):
-        return ROOT / "dist" / f"py-schematron-v.{version}.zip"
+        return OUT / f"py-schematron-v.{version}.zip"
 
     def footer(self, name):
         return (f"File: `{name}`, the scripts, the tests and the documentation.")
@@ -266,7 +290,7 @@ class Program:
             raise Failure(f"tools/corpus-check.py failed ({result.returncode})")
 
     def build(self, version):
-        run(sys.executable, "tools/bundle-zip.py", capture=False)
+        run(sys.executable, "tools/bundle-zip.py", "--output", str(OUT), capture=False)
 
 
 class Emacs:
@@ -280,7 +304,7 @@ class Emacs:
         return changelog_notes(version)
 
     def asset(self, version):
-        return ROOT / "dist" / f"py-schematron.el-v.{version}.zip"
+        return OUT / f"py-schematron.el-v.{version}.zip"
 
     def footer(self, name):
         return ("With Straight: `M-x straight-pull-package RET py-schematron`, then restart "
@@ -325,7 +349,7 @@ class Emacs:
             "-f", "ert-run-tests-batch-and-exit", env=env, capture=False)
 
     def build(self, version):
-        run(sys.executable, "tools/bundle-zip.py", capture=False)
+        run(sys.executable, "tools/bundle-zip.py", "--output", str(OUT), capture=False)
 
 
 class VSCode:
@@ -338,7 +362,7 @@ class VSCode:
         return changelog_notes(version)
 
     def asset(self, version):
-        return ROOT / "dist" / f"validate-schematron-{version}.vsix"
+        return OUT / f"validate-schematron-{version}.vsix"
 
     def footer(self, name):
         return ("Install it from the Visual Studio Marketplace, or with this `.vsix`: "
@@ -350,6 +374,7 @@ class VSCode:
         run("npm", "test", env=env, capture=False)
 
     def build(self, version):
+        # (npm run package lo deja en build/release/: vsce package -o build/release/)
         run("npm", "run", "package", capture=False)
 
 
@@ -364,7 +389,7 @@ class Odd2rng(Program):
         return changelog_notes(version)
 
     def asset(self, version):
-        return ROOT / "dist" / f"ODD2RNG-v.{version}.zip"
+        return OUT / f"ODD2RNG-v.{version}.zip"
 
     def footer(self, name):
         return (f"File: `{name}`, the script, its installer, the tests and the documentation.")
@@ -568,6 +593,7 @@ def main(argv=None):
             say("== tests")
             k.test()
         say("== the file")
+        OUT.mkdir(parents=True, exist_ok=True)
         k.build(version)
         asset = k.asset(version)
         if not asset.is_file():
@@ -586,7 +612,8 @@ def main(argv=None):
             upload = " and upload it as a draft" if args.zenodo_draft else " and publish it"
             zenodo = "collect the deposit for Zenodo" + ("" if args.no_zenodo else upload)
             say(f"== dry run: would tag {tag}, push main and {tag} to Codeberg and GitHub, "
-                f"release with these notes, and {zenodo}:\n")
+                f"release with these notes, {zenodo}, and at the end delete "
+                f"{OUT.relative_to(ROOT)}/ and {ZENODO_OUT.relative_to(ROOT)}/:\n")
             say(body)
             return
         if not args.yes:
@@ -627,6 +654,8 @@ def main(argv=None):
             say("  not uploaded (--no-zenodo)")
         else:
             run(*zenodo, "upload", *([] if args.zenodo_draft else ["--publish"]), capture=False)
+        say("== clean up")
+        clean_up()
         say(f"== {k.repo} {version} released")
     except Failure as e:
         sys.exit(f"release.py: {e}")

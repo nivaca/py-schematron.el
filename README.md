@@ -366,8 +366,11 @@ skipped, and without `PYSCH_TRANG` (trang's command line), the nxml ones.
 
 ## Releases
 
-`python3 tools/bundle-zip.py` makes `dist/py-schematron.el-v.VERSION.zip`
-(the version in `py-schematron.el`) from the files git tracks. Each
+`python3 tools/bundle-zip.py` makes
+`build/release/py-schematron.el-v.VERSION.zip` (the version in
+`py-schematron.el`) from the files git tracks; `tools/release.py` publishes
+it from there and deletes `build/release/` (and the deposit for Zenodo, in
+`build/zenodo/`) at the end. Each
 release, on [Codeberg](https://codeberg.org/nivaca/py-schematron.el/releases)
 and [GitHub](https://github.com/nivaca/py-schematron.el/releases), is
 tagged `vVERSION` and has that zip attached; [CHANGELOG.md](CHANGELOG.md)

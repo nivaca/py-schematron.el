@@ -20,7 +20,7 @@ zip files, are on
   check-token` says whether there is one.
 
 - `tools/zenodo.py` prepares the deposit of a release for Zenodo. `collect`
-  puts in `dist/zenodo/` the tree of the tag as
+  puts in `build/zenodo/` the tree of the tag as
   `py-schematron.el-VERSION-source.tar.gz`, with its signature, a signed
   `SHA256SUMS` of the deposit and the public key, and checks every signature
   with only that key (`--packages` adds the files of the release). `upload`
@@ -35,6 +35,11 @@ zip files, are on
   (`tools/zenodo.py upload --publish`), instead of leaving a draft;
   `--zenodo-draft` still leaves one. `tools/zenodo.py publish` publishes a
   draft already there (by default the one waiting with the project's title).
+- `tools/release.py` makes the zip, its signature and `SHA256SUMS` in
+  `build/release/` (`tools/bundle-zip.py` puts it there too), and
+  `tools/zenodo.py` the deposit in `build/zenodo/`; both are published from
+  there and deleted at the end of the release, so nothing is kept in `dist/`
+  any more.
 
 ## 1.0.2 — 2026-11-23 (py-schematron.py 2.7)
 

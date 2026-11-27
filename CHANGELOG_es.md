@@ -20,7 +20,7 @@ archivos zip, están en
   `$ZENODO_TOKEN`; `tools/zenodo.py check-token` dice si hay uno.
 
 - `tools/zenodo.py` prepara el depósito de una versión en Zenodo. `collect`
-  deja en `dist/zenodo/` el árbol de la etiqueta como
+  deja en `build/zenodo/` el árbol de la etiqueta como
   `py-schematron.el-VERSIÓN-source.tar.gz`, con su firma, un `SHA256SUMS`
   del depósito, firmado, y la clave pública, y comprueba cada firma con solo
   esa clave (`--packages` añade los archivos de la versión). `upload` lo
@@ -36,6 +36,10 @@ archivos zip, están en
   `--zenodo-draft` todavía lo deja. `tools/zenodo.py publish` publica un
   borrador que ya está allí (por omisión, el que espera con el título del
   proyecto).
+- `tools/release.py` hace el zip, su firma y `SHA256SUMS` en
+  `build/release/` (también allí lo deja `tools/bundle-zip.py`), y
+  `tools/zenodo.py` el depósito en `build/zenodo/`; se publican desde allí y
+  se borran al final, así que ya nada queda en `dist/`.
 
 ## 1.0.2 — 2026-11-23 (py-schematron.py 2.7)
 

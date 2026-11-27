@@ -5,6 +5,8 @@
 .schema-cache/
 *.harvested.sch
 __pycache__/
-# release bundles (tools/bundle-zip.py)
+# release bundles (tools/bundle-zip.py, tools/release.py) in build/release/, the
+# Zenodo deposit in build/zenodo/; dist/ was their place until now
+build/
 dist/
 upstream/
